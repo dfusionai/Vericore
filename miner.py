@@ -3,10 +3,9 @@ import time
 import argparse
 import traceback
 import bittensor as bt
-from typing import Tuple
-
-from protocol import Dummy
-
+from typing import Tuple, List
+# import the new protocol
+from veridex_protocol import VeridexSynapse
 
 class Miner:
     def __init__(self):
@@ -15,29 +14,22 @@ class Miner:
         self.setup_bittensor_objects()
 
     def get_config(self):
-        # Set up the configuration parser
         parser = argparse.ArgumentParser()
-        # TODO: Add your custom miner arguments to the parser.
+        # Keep your standard arguments
         parser.add_argument(
             "--custom",
             default="my_custom_value",
             help="Adds a custom value to the parser.",
         )
-        # Adds override arguments for network and netuid.
         parser.add_argument(
             "--netuid", type=int, default=1, help="The chain subnet uid."
         )
-        # Adds subtensor specific arguments.
         bt.subtensor.add_args(parser)
-        # Adds logging specific arguments.
         bt.logging.add_args(parser)
-        # Adds wallet specific arguments.
         bt.wallet.add_args(parser)
-        # Adds axon specific arguments.
         bt.axon.add_args(parser)
-        # Parse the arguments.
+
         config = bt.config(parser)
-        # Set up logging directory
         config.full_path = os.path.expanduser(
             "{}/{}/{}/netuid{}/{}".format(
                 config.logging.logging_dir,
@@ -47,12 +39,10 @@ class Miner:
                 "miner",
             )
         )
-        # Ensure the directory for logging exists.
         os.makedirs(config.full_path, exist_ok=True)
         return config
 
     def setup_logging(self):
-        # Activate Bittensor's logging with the set configurations.
         bt.logging(config=self.config, logging_dir=self.config.full_path)
         bt.logging.info(
             f"Running miner for subnet: {self.config.netuid} on network: {self.config.subtensor.network} with config:"
@@ -60,18 +50,13 @@ class Miner:
         bt.logging.info(self.config)
 
     def setup_bittensor_objects(self):
-        # Initialize Bittensor miner objects
         bt.logging.info("Setting up Bittensor objects.")
-
-        # Initialize wallet.
         self.wallet = bt.wallet(config=self.config)
         bt.logging.info(f"Wallet: {self.wallet}")
 
-        # Initialize subtensor.
         self.subtensor = bt.subtensor(config=self.config)
         bt.logging.info(f"Subtensor: {self.subtensor}")
 
-        # Initialize metagraph.
         self.metagraph = self.subtensor.metagraph(self.config.netuid)
         bt.logging.info(f"Metagraph: {self.metagraph}")
 
@@ -81,14 +66,13 @@ class Miner:
             )
             exit()
         else:
-            # Each miner gets a unique identity (UID) in the network.
             self.my_subnet_uid = self.metagraph.hotkeys.index(
                 self.wallet.hotkey.ss58_address
             )
             bt.logging.info(f"Running miner on uid: {self.my_subnet_uid}")
 
-    def blacklist_fn(self, synapse: Dummy) -> Tuple[bool, str]:
-        # Ignore requests from unrecognized entities.
+    def blacklist_fn(self, synapse: VeridexSynapse) -> Tuple[bool, str]:
+        # basic check for recognized hotkeys
         if synapse.dendrite.hotkey not in self.metagraph.hotkeys:
             bt.logging.trace(
                 f"Blacklisting unrecognized hotkey {synapse.dendrite.hotkey}"
@@ -99,45 +83,49 @@ class Miner:
         )
         return False, None
 
-    def dummy(self, synapse: Dummy) -> Dummy:
-        # Simple logic: return the input value multiplied by 2.
-        synapse.dummy_output = synapse.dummy_input * 2
+    def veridex_forward(self, synapse: VeridexSynapse) -> VeridexSynapse:
+        """
+        Hard-coded logic that returns some made-up (url, xpath).
+        We'll improve it later with real indexing/fact-checking logic.
+        """
+        # For now, the same response for every statement.
+        # We might consider the `synapse.sources` or `synapse.statement` if we wanted to do some simple variation.
+
+        example_response = [
+            ("https://en.wikipedia.org/wiki/Example", "//div[@id='mw-content-text']"),
+            ("https://cointelegraph.com/example-article", "//body/article[1]"),
+        ]
+        synapse.veridex_response = example_response
+
         bt.logging.info(
-            f"Received input: {synapse.dummy_input}, sending output: {synapse.dummy_output}"
+            f"Miner received statement: '{synapse.statement}' with sources: {synapse.sources}.\n"
+            f"Returning {synapse.veridex_response}"
         )
         return synapse
 
     def setup_axon(self):
-        # Build and link miner functions to the axon.
         self.axon = bt.axon(wallet=self.wallet, config=self.config)
-
-        # Attach functions to the axon.
         bt.logging.info("Attaching forward function to axon.")
         self.axon.attach(
-            forward_fn=self.dummy,
+            forward_fn=self.veridex_forward,
             blacklist_fn=self.blacklist_fn,
         )
-
-        # Serve the axon.
         bt.logging.info(
             f"Serving axon on network: {self.config.subtensor.network} with netuid: {self.config.netuid}"
         )
         self.axon.serve(netuid=self.config.netuid, subtensor=self.subtensor)
         bt.logging.info(f"Axon: {self.axon}")
 
-        # Start the axon server.
         bt.logging.info(f"Starting axon server on port: {self.config.axon.port}")
         self.axon.start()
 
     def run(self):
         self.setup_axon()
-
-        # Keep the miner alive.
         bt.logging.info(f"Starting main loop")
         step = 0
         while True:
             try:
-                # Periodically update our knowledge of the network graph.
+                # periodically update metagraph
                 if step % 60 == 0:
                     self.metagraph.sync()
                     log = (
@@ -156,8 +144,6 @@ class Miner:
                 bt.logging.error(traceback.format_exc())
                 continue
 
-
-# Run the miner.
 if __name__ == "__main__":
     miner = Miner()
     miner.run()
