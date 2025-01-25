@@ -4,8 +4,8 @@ import argparse
 import traceback
 import bittensor as bt
 from typing import Tuple, List
-# import the new protocol
-from veridex_protocol import VeridexSynapse
+
+from veridex_protocol import VeridexSynapse, SourceEvidence
 
 class Miner:
     def __init__(self):
@@ -15,7 +15,6 @@ class Miner:
 
     def get_config(self):
         parser = argparse.ArgumentParser()
-        # Keep your standard arguments
         parser.add_argument(
             "--custom",
             default="my_custom_value",
@@ -85,16 +84,43 @@ class Miner:
 
     def veridex_forward(self, synapse: VeridexSynapse) -> VeridexSynapse:
         """
-        Hard-coded logic that returns some made-up (url, xpath).
-        We'll improve it later with real indexing/fact-checking logic.
+        Naive logic that returns a couple of made-up snippet references.
+        Typically, you'd want to do real searching or indexing here. 
         """
-        # For now, the same response for every statement.
-        # We might consider the `synapse.sources` or `synapse.statement` if we wanted to do some simple variation.
+        # Example: we look at the statement, do a naive check if "Bitcoin" is in it
+        # and pick a relevant snippet. Otherwise return generic snippet(s).
 
-        example_response = [
-            ("https://en.wikipedia.org/wiki/Example", "//div[@id='mw-content-text']"),
-            ("https://cointelegraph.com/example-article", "//body/article[1]"),
-        ]
+        example_response = []
+        if "bitcoin" in synapse.statement.lower():
+            # Suppose we "found" a snippet on Wikipedia
+            e1 = SourceEvidence(
+                url="https://en.wikipedia.org/wiki/Bitcoin",
+                xpath="//div[@id='mw-content-text']",
+                start_char=0,
+                end_char=200,
+                excerpt="Bitcoin is a decentralized digital currency..."
+            )
+            example_response.append(e1)
+            # Another random one
+            e2 = SourceEvidence(
+                url="https://cointelegraph.com/bitcoin-article",
+                xpath="//body/article[1]",
+                start_char=0,
+                end_char=150,
+                excerpt="Cointelegraph coverage of Bitcoin suggests..."
+            )
+            example_response.append(e2)
+        else:
+            # Generic response if we have no special logic
+            e3 = SourceEvidence(
+                url="https://en.wikipedia.org/wiki/Example",
+                xpath="//div[@id='mw-content-text']",
+                start_char=0,
+                end_char=120,
+                excerpt="Example domain text about something..."
+            )
+            example_response.append(e3)
+
         synapse.veridex_response = example_response
 
         bt.logging.info(
