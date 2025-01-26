@@ -4,13 +4,15 @@ import bittensor as bt
 
 class VeridexQualityModel:
     """
-    Example Quality Model using roberta-large-mnli.
+    Example Quality Model using roberta-large-mnli (or roberta-base-mnli).
     This model's classification head typically returns:
-      - 0 -> CONTRADICTION
-      - 1 -> NEUTRAL
-      - 2 -> ENTAILMENT
-    We adapt that to a "quality" or "alignment" score 
-    for the validator's aggregator logic. 
+      index 0 -> CONTRADICTION
+      index 1 -> NEUTRAL
+      index 2 -> ENTAILMENT
+
+    We'll compute a probability distribution via softmax(logits).
+    Then, we define a custom "score" formula that rewards contradiction or entailment
+    and penalizes strongly neutral.
     """
 
     def __init__(self, model_name='roberta-large-mnli'):
@@ -21,43 +23,76 @@ class VeridexQualityModel:
         self.model.to(self.device)
         self.model.eval()
 
-    def score_pair(self, statement: str, snippet: str) -> float:
+    def score_pair_distrib(self, statement: str, snippet: str):
         """
-        Returns a real-valued quality score. 
-        For example:
-          - ENT -> +1.0
-          - CONTRADICTION -> +1.0
-          - NEUTRAL -> 0.0
-        Because both entailed or contradicted means it's providing a 
-        potential verification or falsification. 
-        Neutral means it doesn't help confirm or deny.
+        Compute the probability distribution over [contradiction, neutral, entailment].
+        
+        Returns:
+          probs: dict of {
+              "contradiction": float,
+              "neutral": float,
+              "entailment": float
+          }
+          local_score: a float derived from these probabilities.
+
+        Our default formula here:
+            local_score = prob_contra + prob_entail - (0.5 * prob_neutral)
+
+        That means "contradiction" or "entailment" are good signals for 'verification'.
+        Meanwhile, if there's too much neutrality, we reduce the reward.
         """
         inputs = self.tokenizer(statement, snippet, return_tensors='pt',
                                 truncation=True, padding=True)
         inputs = {k: v.to(self.device) for k, v in inputs.items()}
+        
         with torch.no_grad():
             logits = self.model(**inputs).logits
-            pred = torch.argmax(logits, dim=-1).item()
+            # logits.shape = [batch_size, 3]
+            probs_tensor = torch.softmax(logits, dim=-1)[0]  # [3]
+            prob_contra = probs_tensor[0].item()
+            prob_neutral = probs_tensor[1].item()
+            prob_entail = probs_tensor[2].item()
 
-        # roberta-large-mnli label mapping: 0=contradiction, 1=neutral, 2=entailment
-        # We'll define a simple scoring scheme:
-        if pred == 1:  # neutral
-            return 0.0
-        else:
-            # contradiction or entailment
-            return 1.0
+        # Simple formula
+        local_score = (prob_contra + prob_entail) - (0.5 * prob_neutral)
 
-    def score_statement_snippets(self, statement: str, snippets: list) -> float:
+        return {
+            "contradiction": prob_contra,
+            "neutral": prob_neutral,
+            "entailment": prob_entail
+        }, local_score
+
+    def score_statement_snippets(self, statement: str, snippet_texts: list) -> (float, list):
         """
-        If you have multiple evidence snippets, you can sum or average them.
-        Return a single numeric "quality" measure for all snippets combined.
+        If you have multiple evidence snippets, we compute
+        a distribution and local score for each snippet,
+        then average them to get a combined_score.
+
+        Returns:
+          combined_score: float
+          snippet_distributions: list of dicts, each with
+            {
+              "contradiction": float,
+              "neutral": float,
+              "entailment": float,
+              "local_score": float
+            }
         """
-        if not snippets:
-            return 0.0
+        if not snippet_texts:
+            return 0.0, []
 
-        total = 0.0
-        for snippet in snippets:
-            total += self.score_pair(statement, snippet)
+        snippet_distributions = []
+        total_score = 0.0
 
-        # Example: average
-        return total / len(snippets)
+        for snippet_str in snippet_texts:
+            probs, local_score = self.score_pair_distrib(statement, snippet_str)
+            snippet_distributions.append({
+                "contradiction": probs["contradiction"],
+                "neutral": probs["neutral"],
+                "entailment": probs["entailment"],
+                "local_score": local_score
+            })
+            total_score += local_score
+
+        combined_score = total_score / len(snippet_texts)
+        return combined_score, snippet_distributions

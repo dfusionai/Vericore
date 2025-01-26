@@ -8,6 +8,7 @@ import numpy as np
 
 import bittensor as bt
 
+# Sanic imports
 from sanic import Sanic
 from sanic.request import Request
 from sanic.response import json
@@ -190,7 +191,7 @@ class VeridexValidator:
         elapsed = end_time - start_time + 1e-9
 
         valid_responses = []
-        # Remember: responses[i] corresponds to axons[i], each axon has .hotkey
+        # Remember: responses[i] corresponds to axons[i]
         for resp, axon_info in zip(responses, subset_axons):
             if resp is not None and resp.veridex_response is not None:
                 valid_responses.append((axon_info, resp))
@@ -203,8 +204,6 @@ class VeridexValidator:
 
         # We'll track data to return
         response_data = []
-        # We'll track the newly computed raw scores for each miner in the subset
-        new_raw_scores = {}
 
         for (axon_info, resp) in valid_responses:
             # axon_info has .hotkey, .ip, etc.
@@ -214,8 +213,8 @@ class VeridexValidator:
                 continue
 
             # 1) Speed factor (faster is better).
-            #    For demonstration, let's do 1 - (elapsed / 15).
-            #    The smaller the total time, the better. If > 15s, it can go negative.
+            #    The smaller the total time, the better. 
+            #    If > 15s, we effectively go negative.
             speed_factor = 1.0 - (elapsed / 15.0)
 
             # 2) Domain factor (# of unique domains in the response).
@@ -226,44 +225,49 @@ class VeridexValidator:
                 domain_set.add(domain)
             domain_factor = len(domain_set) * 0.2  # scale how you like
 
-            # 3) Quality factor from RoBERTa (contradiction or entailment => +1; neutral => 0).
-            #    We must fetch the snippet from each (url, xpath, offset) if available,
-            #    or rely on the excerpt the miner might have provided.
+            # 3) Retrieve snippet text for each item, compute distribution
             snippet_texts = []
             for evid in resp.veridex_response:
-                # If excerpt is provided by the miner, we can skip fetch. 
-                # Otherwise, attempt to fetch:
                 if evid.excerpt.strip():
                     snippet_texts.append(evid.excerpt)
                 else:
-                    # fetch snippet text from the URL
                     snippet = self.fetcher.fetch_snippet_text(
                         evid.url, evid.xpath, evid.start_char, evid.end_char
                     )
                     snippet_texts.append(snippet)
-            quality_score = self.quality_model.score_statement_snippets(statement, snippet_texts)
 
-            # If nonsense statement, 
-            # and the snippet is "entailment" or "contradiction" 
-            # => they might be faking. Let's do a penalty.
-            # For example, if quality_score > 0.5, we apply penalty
+            # 4) Quality scoring (with distribution)
+            combined_quality_score, snippet_distribs = self.quality_model.score_statement_snippets(statement, snippet_texts)
+
+            # If nonsense statement, penalize if it's strongly contradictory or entailed
+            # i.e. if combined_quality_score is large => they are "confident" about verifying nonsense
             penalty_factor = 0.0
-            if is_test and is_nonsense and (quality_score > 0.1):
+            if is_test and is_nonsense and (combined_quality_score > 0.1):
                 penalty_factor -= 1.0
 
-            raw_score = speed_factor + domain_factor + quality_score + penalty_factor
-            
-            # Optionally clamp the raw score so it doesn't blow up:
+            # 5) "Strongly neutral" penalty
+            #    If the average neutral probability across all snippets > 0.7 => penalize
+            neutral_probs = [d["neutral"] for d in snippet_distribs]
+            avg_neutral = sum(neutral_probs)/len(neutral_probs) if neutral_probs else 0.0
+            neutral_penalty = 0.0
+            if avg_neutral > 0.7:
+                # Example logic: penalize by how far above 0.7 it is
+                neutral_penalty = -1.0 * (avg_neutral - 0.7)
+
+            # Combine everything for final raw_score
+            raw_score = speed_factor + domain_factor + combined_quality_score + penalty_factor + neutral_penalty
+
+            # Clamp so we don't blow up or go extremely negative
             raw_score = max(raw_score, -3.0)
             raw_score = min(raw_score, 3.0)
 
-            # Merge into the "moving_scores"
-            # We'll do a simple momentum update: 
-            # new = old * 0.8 + raw_score * 0.2
-            self.moving_scores[miner_uid] = 0.8 * self.moving_scores[miner_uid] + 0.2 * raw_score
+            # Merge into the "moving_scores" with simple momentum update
+            old_val = self.moving_scores[miner_uid]
+            self.moving_scores[miner_uid] = 0.8 * old_val + 0.2 * raw_score
 
-            new_raw_scores[miner_uid] = raw_score
-
+            # Add record to response
+            # Also include snippet distribution so user can see the probability 
+            # for contradiction/neutral/entailment in each snippet
             response_data.append({
                 "miner_hotkey": axon_info.hotkey,
                 "miner_uid": miner_uid,
@@ -275,10 +279,12 @@ class VeridexValidator:
                         "end_char": e.end_char
                     } for e in resp.veridex_response
                 ],
+                "snippet_distributions": snippet_distribs,  # per-snippet distribution
+                "aggregated_quality_score": combined_quality_score,
                 "speed_factor": speed_factor,
                 "domain_factor": domain_factor,
-                "quality_score": quality_score,
                 "penalty_factor": penalty_factor,
+                "neutral_penalty": neutral_penalty,
                 "raw_score": raw_score
             })
 
@@ -293,7 +299,7 @@ class VeridexValidator:
         """
         Naive approach:
           - Randomly pick k axons from the entire metagraph
-        Could also do weighted picks based on current moving_scores, etc.
+        Could do weighted picks based on self.moving_scores, etc.
         """
         all_axons = self.metagraph.axons
         if len(all_axons) <= k:
@@ -318,8 +324,7 @@ class VeridexValidator:
             return parts[0].lower()
         return url.lower()
 
-
-# Create a global reference to the validator instance
+# Global reference to the validator instance
 validator_instance: VeridexValidator = None
 
 @app.post("/veridex_query")
@@ -330,24 +335,9 @@ async def veridex_query(request: Request):
        "statement": "Bitcoin is digital gold",
        "sources": ["https://en.wikipedia.org/wiki/Bitcoin"]
     }
-    Returns:
-    {
-       "status": "ok",
-       "statement": "...",
-       "sources": [...],
-       "results": [
-          {
-             "miner_hotkey": "...",
-             "miner_uid": ...,
-             "veridex_response": [{"url":"...", "xpath":"...", ...}, ... ],
-             "speed_factor": ...,
-             "domain_factor": ...,
-             "quality_score": ...,
-             "penalty_factor": ...,
-             "raw_score": ...
-          }
-       ]
-    }
+    Returns a JSON dict with:
+      - "statement", "sources"
+      - "results": a list of responses from each miner in the subset
     """
     if not request.json or "statement" not in request.json:
         return json({"status": "error", "message": "Missing 'statement' in JSON"}, status=400)
