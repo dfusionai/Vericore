@@ -11,7 +11,7 @@ class VeridexQualityModel:
       index 2 -> ENTAILMENT
 
     We'll compute a probability distribution via softmax(logits).
-    Then, we define a custom "score" formula that rewards contradiction or entailment
+    Then, define a custom "score" formula that rewards contradiction or entailment
     and penalizes strongly neutral.
     """
 
@@ -35,11 +35,8 @@ class VeridexQualityModel:
           }
           local_score: a float derived from these probabilities.
 
-        Our default formula here:
-            local_score = prob_contra + prob_entail - (0.5 * prob_neutral)
-
-        That means "contradiction" or "entailment" are good signals for 'verification'.
-        Meanwhile, if there's too much neutrality, we reduce the reward.
+        Default formula:
+            local_score = (prob_contra + prob_entail) - (prob_neutral)
         """
         inputs = self.tokenizer(statement, snippet, return_tensors='pt',
                                 truncation=True, padding=True)
@@ -53,9 +50,7 @@ class VeridexQualityModel:
             prob_neutral = probs_tensor[1].item()
             prob_entail = probs_tensor[2].item()
 
-        # Simple formula
-        local_score = (prob_contra + prob_entail) - (0.5 * prob_neutral)
-
+        local_score = (prob_contra + prob_entail) - (prob_neutral)
         return {
             "contradiction": prob_contra,
             "neutral": prob_neutral,

@@ -188,89 +188,105 @@ class VeridexValidator:
             timeout=12
         )
         end_time = time.time()
-        elapsed = end_time - start_time + 1e-9
+        elapsed = end_time - start_time + 1e-9  # for speed calc
 
-        valid_responses = []
-        # Remember: responses[i] corresponds to axons[i]
-        for resp, axon_info in zip(responses, subset_axons):
-            if resp is not None and resp.veridex_response is not None:
-                valid_responses.append((axon_info, resp))
-
-        if not valid_responses:
-            return {
-                "status": "no_responses",
-                "message": "No miner responded in time or no valid response."
-            }
-
-        # We'll track data to return
+        # For returning data to the user
         response_data = []
 
-        for (axon_info, resp) in valid_responses:
-            # axon_info has .hotkey, .ip, etc.
-            miner_uid = self._hotkey_to_uid(axon_info.hotkey)
+        # Keep track of which hotkeys responded
+        responded_hotkeys = set()
+
+        # For each axon, see if they responded in time with a valid response
+        for axon_info, resp in zip(subset_axons, responses):
+            miner_hotkey = axon_info.hotkey
+            miner_uid = self._hotkey_to_uid(miner_hotkey)
             if miner_uid is None:
-                # Skip if we can't find it. 
+                # Shouldn't happen if they're in the subgraph, but just in case
                 continue
 
-            # 1) Speed factor (faster is better).
-            #    The smaller the total time, the better. 
-            #    If > 15s, we effectively go negative.
-            speed_factor = 1.0 - (elapsed / 15.0)
+            if resp is None or resp.veridex_response is None:
+                # Did not respond or invalid response => big penalty
+                final_score = -2.0
+                self._update_moving_score(miner_uid, final_score)
+                response_data.append({
+                    "miner_hotkey": miner_hotkey,
+                    "miner_uid": miner_uid,
+                    "status": "no_response",
+                    "raw_score": final_score
+                })
+                continue
 
-            # 2) Domain factor (# of unique domains in the response).
-            #    More unique domains => higher variety => better
-            domain_set = set()
-            for evid in resp.veridex_response:
-                domain = self._extract_domain(evid.url)
-                domain_set.add(domain)
-            domain_factor = len(domain_set) * 0.2  # scale how you like
+            # Mark as responded
+            responded_hotkeys.add(miner_hotkey)
 
-            # 3) Retrieve snippet text for each item, compute distribution
+            # 1) Collect snippet texts
             snippet_texts = []
+            domain_counts = {}
+            snippet_details = []  # we'll store snippet-level info for the final JSON
+
             for evid in resp.veridex_response:
-                if evid.excerpt.strip():
-                    snippet_texts.append(evid.excerpt)
-                else:
-                    snippet = self.fetcher.fetch_snippet_text(
+                # fetch snippet (or use excerpt if present)
+                snippet_str = evid.excerpt.strip()
+                if not snippet_str:
+                    snippet_str = self.fetcher.fetch_snippet_text(
                         evid.url, evid.xpath, evid.start_char, evid.end_char
                     )
-                    snippet_texts.append(snippet)
+                # figure out domain factor
+                domain = self._extract_domain(evid.url)
+                times_used = domain_counts.get(domain, 0)
+                # diminishing returns: e.g. 1.0 if first time, 0.5 if second, 0.25 if third, etc.
+                domain_factor = 1.0 / (2**times_used)
+                domain_counts[domain] = times_used + 1
 
-            # 4) Quality scoring (with distribution)
-            combined_quality_score, snippet_distribs = self.quality_model.score_statement_snippets(statement, snippet_texts)
+                snippet_texts.append((snippet_str, domain_factor, domain))
 
-            # If nonsense statement, penalize if it's strongly contradictory or entailed
-            # i.e. if combined_quality_score is large => they are "confident" about verifying nonsense
-            penalty_factor = 0.0
-            if is_test and is_nonsense and (combined_quality_score > 0.1):
-                penalty_factor -= 1.0
+            # 2) For each snippet, compute local_score from RoBERTa, multiply by domain_factor
+            sum_of_snippets = 0.0
+            snippet_distribs_combined = []  # store the distribution + final snippet_score
 
-            # 5) "Strongly neutral" penalty
-            #    If the average neutral probability across all snippets > 0.7 => penalize
-            neutral_probs = [d["neutral"] for d in snippet_distribs]
-            avg_neutral = sum(neutral_probs)/len(neutral_probs) if neutral_probs else 0.0
-            neutral_penalty = 0.0
-            if avg_neutral > 0.7:
-                # Example logic: penalize by how far above 0.7 it is
-                neutral_penalty = -1.0 * (avg_neutral - 0.7)
+            for snippet_str, dom_factor, domain in snippet_texts:
+                # Evaluate snippet quality
+                probs, local_score = self.quality_model.score_pair_distrib(statement, snippet_str)
+                # snippet_final = local_score * dom_factor
+                snippet_final = local_score * dom_factor
 
-            # Combine everything for final raw_score
-            raw_score = speed_factor + domain_factor + combined_quality_score + penalty_factor + neutral_penalty
+                snippet_distribs_combined.append({
+                    "domain": domain,
+                    "domain_factor": dom_factor,
+                    "contradiction": probs["contradiction"],
+                    "neutral": probs["neutral"],
+                    "entailment": probs["entailment"],
+                    "local_score": local_score,
+                    "snippet_score": snippet_final
+                })
+                sum_of_snippets += snippet_final
 
-            # Clamp so we don't blow up or go extremely negative
-            raw_score = max(raw_score, -3.0)
-            raw_score = min(raw_score, 3.0)
+            # 3) speed factor: let's define in [0,1], so if you take too long you get hammered
+            # e.g. speed_factor = max(0.0, 1.0 - elapsed/15)
+            # If they answered in < 15s => partial credit, >15 => 0
+            speed_factor = max(0.0, 1.0 - (elapsed / 15.0))
 
-            # Merge into the "moving_scores" with simple momentum update
-            old_val = self.moving_scores[miner_uid]
-            self.moving_scores[miner_uid] = 0.8 * old_val + 0.2 * raw_score
+            # 4) final_score before nonsense penalty
+            final_score = sum_of_snippets * speed_factor
 
-            # Add record to response
-            # Also include snippet distribution so user can see the probability 
-            # for contradiction/neutral/entailment in each snippet
+            # 5) nonsense penalty if statement is nonsense but final_score is suspiciously high
+            if is_test and is_nonsense and final_score > 0.5:
+                final_score -= 1.0
+
+            # 6) clamp final score
+            final_score = max(-3.0, min(3.0, final_score))
+
+            # 7) update the moving score
+            self._update_moving_score(miner_uid, final_score)
+
+            # 8) record data
             response_data.append({
-                "miner_hotkey": axon_info.hotkey,
+                "miner_hotkey": miner_hotkey,
                 "miner_uid": miner_uid,
+                "status": "ok",
+                "sum_of_snippets": sum_of_snippets,
+                "speed_factor": speed_factor,
+                "final_score": final_score,
                 "veridex_response": [
                     {
                         "url": e.url,
@@ -279,13 +295,8 @@ class VeridexValidator:
                         "end_char": e.end_char
                     } for e in resp.veridex_response
                 ],
-                "snippet_distributions": snippet_distribs,  # per-snippet distribution
-                "aggregated_quality_score": combined_quality_score,
-                "speed_factor": speed_factor,
-                "domain_factor": domain_factor,
-                "penalty_factor": penalty_factor,
-                "neutral_penalty": neutral_penalty,
-                "raw_score": raw_score
+                # Include snippet-level distributions, domain factor usage
+                "snippet_distributions": snippet_distribs_combined
             })
 
         return {
@@ -294,6 +305,14 @@ class VeridexValidator:
             "sources": sources,
             "results": response_data
         }
+
+    def _update_moving_score(self, uid: int, new_raw_score: float):
+        """
+        Momentum update:
+          new_val = 0.8 * old_val + 0.2 * new_raw_score
+        """
+        old_val = self.moving_scores[uid]
+        self.moving_scores[uid] = 0.8 * old_val + 0.2 * new_raw_score
 
     def _select_miner_subset(self, k=5):
         """
@@ -338,6 +357,7 @@ async def veridex_query(request: Request):
     Returns a JSON dict with:
       - "statement", "sources"
       - "results": a list of responses from each miner in the subset
+        including snippet-level distributions and final scores
     """
     if not request.json or "statement" not in request.json:
         return json({"status": "error", "message": "Missing 'statement' in JSON"}, status=400)
