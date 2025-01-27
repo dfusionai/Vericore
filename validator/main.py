@@ -1,25 +1,31 @@
 import os
 import time
 import random
-import argparse
 import traceback
+import argparse
 import threading
 import numpy as np
+import string
+import multiprocessing
+import queue
+import asyncio
 
-import bittensor as bt
-
-# Sanic imports
+# Sanic
 from sanic import Sanic
 from sanic.request import Request
 from sanic.response import json
 
+# Bittensor and Validator
+import bittensor as bt
 from veridex_protocol import VeridexSynapse, SourceEvidence
 from validator.quality_model import VeridexQualityModel
 from validator.active_tester import StatementGenerator
-from validator.snippet_fetcher import SnippetFetcher  # We still use Selenium from here
+from validator.snippet_fetcher import SnippetFetcher
 
-app = Sanic("VeridexApp")
 
+########################################
+# The main validator code
+########################################
 class VeridexValidator:
     def __init__(self):
         self.config = self.get_config()
@@ -98,34 +104,59 @@ class VeridexValidator:
             self.my_subnet_uid = self.metagraph.hotkeys.index(self.wallet.hotkey.ss58_address)
             bt.logging.info(f"Running validator on uid: {self.my_subnet_uid}")
 
-    def run(self):
-        # Start the Sanic server in a separate thread
-        server_thread = threading.Thread(
-            target=lambda: app.run(host="0.0.0.0", port=8080, debug=False, access_log=False),
-            daemon=True
-        )
-        server_thread.start()
+    def run_main_loop_with_queue(self, task_queue, result_dict):
+        """
+        Main loop that:
+          1) Periodically does active tests & chain updates
+          2) Polls the queue for incoming requests
+             (request_id, statement, sources)
+          3) Processes them with handle_veridex_query
+          4) Puts result in result_dict
+        """
+        bt.logging.info("Starting validator main loop (queue-based).")
 
-        bt.logging.info("Starting validator main loop.")
         while True:
             try:
-                # Occasionally run an active test
+                # 1) Possibly run an active test
                 if random.random() < self.active_test_prob:
                     self._perform_active_test()
 
-                # Periodically update chain weights
+                # 2) Periodically update chain weights
                 self.last_update = self.subtensor.blocks_since_last_update(self.config.netuid, self.my_uid)
                 if self.last_update > self.tempo + 1:
                     self._sync_and_set_weights()
 
-                time.sleep(5)
+                # 3) Poll the queue for tasks
+                #    We'll use nowait + try/except so we can keep looping,
+                #    or a small batch. If we want to handle multiple tasks, we can do so.
+                handled_something = False
+                while True:
+                    try:
+                        request_id, statement, sources = task_queue.get_nowait()
+                    except queue.Empty:
+                        break  # no more tasks
+                    except Exception as e:
+                        bt.logging.error(f"Queue error: {e}")
+                        break
+                    else:
+                        # We got a task: handle it
+                        bt.logging.info(f"Got request_id={request_id} from queue.")
+                        result = self.handle_veridex_query(statement, sources)
+                        # Put the result in the dict
+                        result_dict[request_id] = result
+                        handled_something = True
+
+                # If we handled tasks or not, let's just do a short sleep
+                # so we don't spin too fast.
+                time.sleep(0.1)
 
             except KeyboardInterrupt:
-                bt.logging.success("Keyboard interrupt detected. Exiting validator.")
-                exit()
+                bt.logging.success("Keyboard interrupt in validator. Exiting.")
+                return
             except Exception as e:
-                bt.logging.error(e)
+                bt.logging.error(f"Error in validator loop: {e}")
                 traceback.print_exc()
+                # keep going or break as needed
 
     def _perform_active_test(self):
         """Generate random statement, query subset, score responses."""
@@ -165,7 +196,6 @@ class VeridexValidator:
         elapsed = end_time - start_time + 1e-9
 
         response_data = []
-        responded_hotkeys = set()
 
         for axon_info, resp in zip(subset_axons, responses):
             miner_hotkey = axon_info.hotkey
@@ -186,9 +216,7 @@ class VeridexValidator:
                 })
                 continue
 
-            responded_hotkeys.add(miner_hotkey)
-
-            # We'll do domain factor, roberta scoring, and also snippet-check
+            # We'll do domain factor, roberta scoring, snippet-check, etc.
             snippet_distribs = []
             domain_counts = {}
             sum_of_snippets = 0.0
@@ -207,7 +235,6 @@ class VeridexValidator:
                     sum_of_snippets += snippet_score
                     continue
 
-                # Check snippet is indeed in the final rendered HTML
                 snippet_found = self._verify_snippet_in_rendered_page(evid.url, snippet_str)
                 if not snippet_found:
                     snippet_score = -1.0
@@ -281,13 +308,8 @@ class VeridexValidator:
         }
 
     def _verify_snippet_in_rendered_page(self, url: str, snippet_text: str) -> bool:
-        """
-        Use SnippetFetcher to get the final rendered HTML (JS included).
-        Return True if snippet_text is a substring of that HTML.
-        """
         try:
             page_html = self.fetcher.fetch_entire_page(url)
-            # do a simple substring check
             return snippet_text in page_html
         except:
             return False
@@ -313,24 +335,86 @@ class VeridexValidator:
             return parts[0].lower()
         return url.lower()
 
-# Global reference
-validator_instance: VeridexValidator = None
+
+########################################
+# Sanic server code (main process)
+########################################
+app = Sanic("VeridexQueueApp")
+
+# We'll keep references to the queue + result_dict (populated by the validator).
+task_queue = None
+result_dict = None
+
 
 @app.post("/veridex_query")
 async def veridex_query(request: Request):
-    if not request.json or "statement" not in request.json:
+    """
+    Receives a statement + sources. Enqueues them with a request_id.
+    Waits for the validator process to produce a result, then returns JSON.
+    """
+    global task_queue, result_dict
+
+    data = request.json or {}
+    statement = data.get("statement")
+    sources = data.get("sources", [])
+
+    if not statement:
         return json({"status": "error", "message": "Missing 'statement' in JSON"}, status=400)
 
-    statement = request.json["statement"]
-    sources = request.json.get("sources", [])
+    # Generate a unique request_id for tracking
+    request_id = f"req-{random.getrandbits(32):08x}"  # or any unique generator
 
-    global validator_instance
-    if validator_instance is None:
-        return json({"status": "error", "message": "Validator not initialized"}, status=500)
+    # Place the task on the queue
+    task_queue.put((request_id, statement, sources))
 
-    result = validator_instance.handle_veridex_query(statement, sources)
+    # Poll for the result
+    # We'll do a simple async loop waiting for the validator to fill it
+    while request_id not in result_dict:
+        await asyncio.sleep(0.1)
+
+    # Retrieve the result
+    result = result_dict[request_id]
+    # Optionally remove from dict to not accumulate data
+    del result_dict[request_id]
+
     return json(result)
 
+
+########################################
+# Main entry point
+########################################
 if __name__ == "__main__":
-    validator_instance = VeridexValidator()
-    validator_instance.run()
+    # We use a multiprocessing.Manager to create shared objects (queue, dict)
+    with multiprocessing.Manager() as manager:
+        # Create the queue and dict
+        task_queue = manager.Queue()
+        result_dict = manager.dict()
+
+        # Save references into the global variables so the route can use them
+        globals()["task_queue"] = task_queue
+        globals()["result_dict"] = result_dict
+
+        # Spawn the validator in its own process
+        def validator_process():
+            # Construct the validator
+            validator = VeridexValidator()
+            # Run its loop, which also checks the queue for tasks
+            validator.run_main_loop_with_queue(task_queue, result_dict)
+
+        p = multiprocessing.Process(target=validator_process, daemon=True)
+        p.start()
+
+        # Now run the Sanic server in the main process
+        # single_process=True ensures we don't fork again
+        app.run(
+            host="0.0.0.0",
+            port=8080,
+            debug=False,
+            workers=1,
+            single_process=True
+        )
+
+        # If the server exits for some reason, kill the validator process
+        p.terminate()
+        p.join()
+
