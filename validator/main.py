@@ -98,8 +98,6 @@ class VeridexValidator:
             self.my_subnet_uid = self.metagraph.hotkeys.index(self.wallet.hotkey.ss58_address)
             bt.logging.info(f"Running validator on uid: {self.my_subnet_uid}")
 
-        bt.logging.info(f"Initial Scores: {self.moving_scores}")
-
     def run(self):
         # Start the Sanic server in a separate thread
         server_thread = threading.Thread(
