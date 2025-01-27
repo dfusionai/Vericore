@@ -16,7 +16,7 @@ from sanic.response import json
 from veridex_protocol import VeridexSynapse, SourceEvidence
 from validator.quality_model import VeridexQualityModel
 from validator.active_tester import StatementGenerator
-from validator.snippet_fetcher import SnippetFetcher
+from validator.snippet_fetcher import SnippetFetcher  # We still use Selenium from here
 
 app = Sanic("VeridexApp")
 
@@ -26,41 +26,34 @@ class VeridexValidator:
         self.setup_logging()
         self.setup_bittensor_objects()
         self.my_uid = self.metagraph.hotkeys.index(self.wallet.hotkey.ss58_address)
-        
-        # The raw "scores" for each miner. We'll update them after each query.
+
+        # We'll store a "score" for each miner (UID)
         self.moving_scores = [1.0] * len(self.metagraph.S)
 
         # For chain updates
-        self.last_update = self.subtensor.blocks_since_last_update(
-            self.config.netuid, self.my_uid
-        )
+        self.last_update = self.subtensor.blocks_since_last_update(self.config.netuid, self.my_uid)
         self.tempo = self.subtensor.tempo(self.config.netuid)
 
-        # Our RoBERTa-based model for scoring snippet alignment
+        # Our RoBERTa-based model for snippet alignment
         self.quality_model = VeridexQualityModel()
 
         # For generating random statements
         self.statement_generator = StatementGenerator()
 
-        # For fetching snippet text
+        # For fetching page HTML (rendered)
         self.fetcher = SnippetFetcher()
 
-        # Probability of “active test” in each cycle
+        # Probability of “active test” each cycle
         self.active_test_prob = 0.3
 
     def get_config(self):
         parser = argparse.ArgumentParser()
-        parser.add_argument(
-            "--custom",
-            default="my_custom_value",
-            help="Adds a custom value to the parser.",
-        )
-        parser.add_argument(
-            "--netuid", type=int, default=1, help="The chain subnet uid."
-        )
+        parser.add_argument("--custom", default="my_custom_value", help="Adds a custom value to the parser.")
+        parser.add_argument("--netuid", type=int, default=1, help="The chain subnet uid.")
         bt.subtensor.add_args(parser)
         bt.logging.add_args(parser)
         bt.wallet.add_args(parser)
+
         config = bt.config(parser)
         config.full_path = os.path.expanduser(
             "{}/{}/{}/netuid{}/validator".format(
@@ -76,7 +69,8 @@ class VeridexValidator:
     def setup_logging(self):
         bt.logging(config=self.config, logging_dir=self.config.full_path)
         bt.logging.info(
-            f"Running VeridexValidator for subnet: {self.config.netuid} on network: {self.config.subtensor.network} with config:"
+            f"Running VeridexValidator for subnet: {self.config.netuid} "
+            f"on network: {self.config.subtensor.network} with config:"
         )
         bt.logging.info(self.config)
 
@@ -96,19 +90,18 @@ class VeridexValidator:
 
         if self.wallet.hotkey.ss58_address not in self.metagraph.hotkeys:
             bt.logging.error(
-                f"Your validator: {self.wallet} is not registered to chain connection: {self.subtensor} \nRun 'btcli register' and try again."
+                f"Your validator: {self.wallet} is not registered to chain connection: {self.subtensor}.\n"
+                f"Run 'btcli register' and try again."
             )
             exit()
         else:
-            self.my_subnet_uid = self.metagraph.hotkeys.index(
-                self.wallet.hotkey.ss58_address
-            )
+            self.my_subnet_uid = self.metagraph.hotkeys.index(self.wallet.hotkey.ss58_address)
             bt.logging.info(f"Running validator on uid: {self.my_subnet_uid}")
 
         bt.logging.info(f"Initial Scores: {self.moving_scores}")
 
     def run(self):
-        # Start the Sanic server in a separate thread so the main loop can keep running
+        # Start the Sanic server in a separate thread
         server_thread = threading.Thread(
             target=lambda: app.run(host="0.0.0.0", port=8080, debug=False, access_log=False),
             daemon=True
@@ -116,17 +109,14 @@ class VeridexValidator:
         server_thread.start()
 
         bt.logging.info("Starting validator main loop.")
-
         while True:
             try:
-                # Occasionally do "active testing" on some subset of miners
+                # Occasionally run an active test
                 if random.random() < self.active_test_prob:
                     self._perform_active_test()
 
-                # Periodically update chain weights 
-                self.last_update = self.subtensor.blocks_since_last_update(
-                    self.config.netuid, self.my_uid
-                )
+                # Periodically update chain weights
+                self.last_update = self.subtensor.blocks_since_last_update(self.config.netuid, self.my_uid)
                 if self.last_update > self.tempo + 1:
                     self._sync_and_set_weights()
 
@@ -140,19 +130,13 @@ class VeridexValidator:
                 traceback.print_exc()
 
     def _perform_active_test(self):
-        """
-        Generate a random statement (maybe nonsense, maybe real).
-        Query a subset of miners. Score their responses.
-        """
+        """Generate random statement, query subset, score responses."""
         statement, is_nonsense = self.statement_generator.generate_statement()
-        # We'll pass an empty 'sources' or some random sources
         sources = []
-
         bt.logging.info(f"[Active Test] Generated statement: '{statement}' (nonsense={is_nonsense})")
         _ = self.handle_veridex_query(statement, sources, is_test=True, is_nonsense=is_nonsense)
 
     def _sync_and_set_weights(self):
-        # Convert raw scores to a softmax distribution
         arr = np.array(self.moving_scores)
         exp_arr = np.exp(arr)
         weights = (exp_arr / np.sum(exp_arr)).tolist()
@@ -167,45 +151,33 @@ class VeridexValidator:
         )
         self.metagraph.sync()
 
-    def handle_veridex_query(self, statement: str, sources: list, 
+    def handle_veridex_query(self, statement: str, sources: list,
                              is_test: bool=False, is_nonsense: bool=False) -> dict:
         """
-        Broadcast a query (statement + sources) to a subset of miners,
-        gather and return results. 
-        Also update moving_scores for each miner in that subset.
-
-        If is_test==True and is_nonsense==True, we penalize miners 
-        that strongly claim "corroboration" or "refutation".
+        1) Query subset of miners with the statement.
+        2) For each valid response, verify snippet is truly on page (with Selenium).
+        3) Apply domain factor, speed factor, nonsense penalty, etc.
         """
-        subset_axons = self._select_miner_subset(k=5)  # pick e.g. 5 random miners
-
+        subset_axons = self._select_miner_subset(k=5)
         synapse = VeridexSynapse(statement=statement, sources=sources)
 
         start_time = time.time()
-        responses = self.dendrite.query(
-            axons=subset_axons, 
-            synapse=synapse, 
-            timeout=12
-        )
+        responses = self.dendrite.query(axons=subset_axons, synapse=synapse, timeout=12)
         end_time = time.time()
-        elapsed = end_time - start_time + 1e-9  # for speed calc
+        elapsed = end_time - start_time + 1e-9
 
-        # For returning data to the user
         response_data = []
-
-        # Keep track of which hotkeys responded
         responded_hotkeys = set()
 
-        # For each axon, see if they responded in time with a valid response
         for axon_info, resp in zip(subset_axons, responses):
             miner_hotkey = axon_info.hotkey
             miner_uid = self._hotkey_to_uid(miner_hotkey)
             if miner_uid is None:
-                # Shouldn't happen if they're in the subgraph, but just in case
+                # Not found or invalid
                 continue
 
             if resp is None or resp.veridex_response is None:
-                # Did not respond or invalid response => big penalty
+                # No or invalid response => penalty
                 final_score = -2.0
                 self._update_moving_score(miner_uid, final_score)
                 response_data.append({
@@ -216,43 +188,54 @@ class VeridexValidator:
                 })
                 continue
 
-            # Mark as responded
             responded_hotkeys.add(miner_hotkey)
 
-            # 1) Collect snippet texts
-            snippet_texts = []
+            # We'll do domain factor, roberta scoring, and also snippet-check
+            snippet_distribs = []
             domain_counts = {}
-            snippet_details = []  # we'll store snippet-level info for the final JSON
+            sum_of_snippets = 0.0
 
             for evid in resp.veridex_response:
-                # fetch snippet (or use excerpt if present)
                 snippet_str = evid.excerpt.strip()
                 if not snippet_str:
-                    snippet_str = self.fetcher.fetch_snippet_text(
-                        evid.url, evid.xpath, evid.start_char, evid.end_char
-                    )
-                # figure out domain factor
+                    # If snippet is empty, penalize
+                    snippet_score = -1.0
+                    snippet_distribs.append({
+                        "domain": self._extract_domain(evid.url),
+                        "snippet_found": False,
+                        "local_score": 0.0,
+                        "snippet_score": snippet_score
+                    })
+                    sum_of_snippets += snippet_score
+                    continue
+
+                # Check snippet is indeed in the final rendered HTML
+                snippet_found = self._verify_snippet_in_rendered_page(evid.url, snippet_str)
+                if not snippet_found:
+                    snippet_score = -1.0
+                    snippet_distribs.append({
+                        "domain": self._extract_domain(evid.url),
+                        "snippet_found": False,
+                        "local_score": 0.0,
+                        "snippet_score": snippet_score
+                    })
+                    sum_of_snippets += snippet_score
+                    continue
+
+                # Domain factor
                 domain = self._extract_domain(evid.url)
                 times_used = domain_counts.get(domain, 0)
-                # diminishing returns: e.g. 1.0 if first time, 0.5 if second, 0.25 if third, etc.
-                domain_factor = 1.0 / (2**times_used)
+                domain_factor = 1.0 / (2 ** times_used)
                 domain_counts[domain] = times_used + 1
 
-                snippet_texts.append((snippet_str, domain_factor, domain))
-
-            # 2) For each snippet, compute local_score from RoBERTa, multiply by domain_factor
-            sum_of_snippets = 0.0
-            snippet_distribs_combined = []  # store the distribution + final snippet_score
-
-            for snippet_str, dom_factor, domain in snippet_texts:
-                # Evaluate snippet quality
+                # Score snippet with RoBERTa
                 probs, local_score = self.quality_model.score_pair_distrib(statement, snippet_str)
-                # snippet_final = local_score * dom_factor
-                snippet_final = local_score * dom_factor
+                snippet_final = local_score * domain_factor
 
-                snippet_distribs_combined.append({
+                snippet_distribs.append({
                     "domain": domain,
-                    "domain_factor": dom_factor,
+                    "snippet_found": True,
+                    "domain_factor": domain_factor,
                     "contradiction": probs["contradiction"],
                     "neutral": probs["neutral"],
                     "entailment": probs["entailment"],
@@ -261,42 +244,35 @@ class VeridexValidator:
                 })
                 sum_of_snippets += snippet_final
 
-            # 3) speed factor: let's define in [0,1], so if you take too long you get hammered
-            # e.g. speed_factor = max(0.0, 1.0 - elapsed/15)
-            # If they answered in < 15s => partial credit, >15 => 0
+            # speed factor
             speed_factor = max(0.0, 1.0 - (elapsed / 15.0))
 
-            # 4) final_score before nonsense penalty
+            # final_score
             final_score = sum_of_snippets * speed_factor
 
-            # 5) nonsense penalty if statement is nonsense but final_score is suspiciously high
+            # nonsense penalty
             if is_test and is_nonsense and final_score > 0.5:
                 final_score -= 1.0
 
-            # 6) clamp final score
+            # clamp
             final_score = max(-3.0, min(3.0, final_score))
 
-            # 7) update the moving score
+            # update moving score
             self._update_moving_score(miner_uid, final_score)
 
-            # 8) record data
             response_data.append({
                 "miner_hotkey": miner_hotkey,
                 "miner_uid": miner_uid,
                 "status": "ok",
-                "sum_of_snippets": sum_of_snippets,
                 "speed_factor": speed_factor,
                 "final_score": final_score,
                 "veridex_response": [
                     {
                         "url": e.url,
-                        "xpath": e.xpath,
-                        "start_char": e.start_char,
-                        "end_char": e.end_char
+                        "excerpt": e.excerpt
                     } for e in resp.veridex_response
                 ],
-                # Include snippet-level distributions, domain factor usage
-                "snippet_distributions": snippet_distribs_combined
+                "snippet_distributions": snippet_distribs
             })
 
         return {
@@ -306,59 +282,44 @@ class VeridexValidator:
             "results": response_data
         }
 
+    def _verify_snippet_in_rendered_page(self, url: str, snippet_text: str) -> bool:
+        """
+        Use SnippetFetcher to get the final rendered HTML (JS included).
+        Return True if snippet_text is a substring of that HTML.
+        """
+        try:
+            page_html = self.fetcher.fetch_entire_page(url)
+            # do a simple substring check
+            return snippet_text in page_html
+        except:
+            return False
+
     def _update_moving_score(self, uid: int, new_raw_score: float):
-        """
-        Momentum update:
-          new_val = 0.8 * old_val + 0.2 * new_raw_score
-        """
         old_val = self.moving_scores[uid]
         self.moving_scores[uid] = 0.8 * old_val + 0.2 * new_raw_score
 
     def _select_miner_subset(self, k=5):
-        """
-        Naive approach:
-          - Randomly pick k axons from the entire metagraph
-        Could do weighted picks based on self.moving_scores, etc.
-        """
         all_axons = self.metagraph.axons
         if len(all_axons) <= k:
             return all_axons
         return random.sample(all_axons, k)
 
     def _hotkey_to_uid(self, hotkey: str) -> int:
-        """
-        Return the UID for a given hotkey or None if not found.
-        """
         if hotkey in self.metagraph.hotkeys:
             return self.metagraph.hotkeys.index(hotkey)
         return None
 
     def _extract_domain(self, url: str) -> str:
-        """
-        A quick hack to parse domain from URL. 
-        You might prefer using the standard library 'urllib.parse' or 'tldextract'.
-        """
         if "://" in url:
             parts = url.split("://", 1)[1].split("/", 1)
             return parts[0].lower()
         return url.lower()
 
-# Global reference to the validator instance
+# Global reference
 validator_instance: VeridexValidator = None
 
 @app.post("/veridex_query")
 async def veridex_query(request: Request):
-    """
-    Expects JSON like:
-    {
-       "statement": "Bitcoin is digital gold",
-       "sources": ["https://en.wikipedia.org/wiki/Bitcoin"]
-    }
-    Returns a JSON dict with:
-      - "statement", "sources"
-      - "results": a list of responses from each miner in the subset
-        including snippet-level distributions and final scores
-    """
     if not request.json or "statement" not in request.json:
         return json({"status": "error", "message": "Missing 'statement' in JSON"}, status=400)
 

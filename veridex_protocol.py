@@ -1,3 +1,4 @@
+# veridex_protocol.py
 import typing
 import bittensor as bt
 
@@ -6,13 +7,7 @@ class SourceEvidence(typing.NamedTuple):
     Container for a single piece of evidence from a miner.
     """
     url: str
-    xpath: str
-    start_char: int
-    end_char: int
-    # Optionally store the excerpt text if the miner chooses to provide it.
-    # Some miners might skip excerpt to save bandwidth, 
-    # and the validator can fetch it later by using the URL+xpath+offset.
-    excerpt: str = ""
+    excerpt: str = ""  # The snippet text the miner claims is from the URL
 
 class VeridexSynapse(bt.Synapse):
     """
