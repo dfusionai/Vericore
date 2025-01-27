@@ -98,14 +98,11 @@ class VeridexValidator:
             self.my_subnet_uid = self.metagraph.hotkeys.index(self.wallet.hotkey.ss58_address)
             bt.logging.info(f"Running validator on uid: {self.my_subnet_uid}")
 
-    def run(self):
-        # Start the Sanic server in a separate thread
-        server_thread = threading.Thread(
-            target=lambda: app.run(host="0.0.0.0", port=8080, debug=False, access_log=False),
-            daemon=True
-        )
-        server_thread.start()
-
+    def run_validator_loop(self):
+        """
+        Main validator loop: occasionally do active tests,
+        periodically update chain weights, etc.
+        """
         bt.logging.info("Starting validator main loop.")
         while True:
             try:
@@ -122,9 +119,9 @@ class VeridexValidator:
 
             except KeyboardInterrupt:
                 bt.logging.success("Keyboard interrupt detected. Exiting validator.")
-                exit()
+                return
             except Exception as e:
-                bt.logging.error(e)
+                bt.logging.error(f"Error in validator loop: {e}")
                 traceback.print_exc()
 
     def _perform_active_test(self):
@@ -313,7 +310,7 @@ class VeridexValidator:
             return parts[0].lower()
         return url.lower()
 
-# Global reference
+# Reference to the validator, set later
 validator_instance: VeridexValidator = None
 
 @app.post("/veridex_query")
@@ -331,6 +328,17 @@ async def veridex_query(request: Request):
     result = validator_instance.handle_veridex_query(statement, sources)
     return json(result)
 
+
 if __name__ == "__main__":
+    # Initialize your validator
     validator_instance = VeridexValidator()
-    validator_instance.run()
+
+    # Start the validator loop in the background
+    def _background_loop():
+        validator_instance.run_validator_loop()
+
+    t = threading.Thread(target=_background_loop, daemon=True)
+    t.start()
+
+    # Run Sanic in the main thread with a single worker
+    app.run(host="0.0.0.0", port=8080, debug=False, workers=1)
