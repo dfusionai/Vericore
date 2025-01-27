@@ -7,19 +7,18 @@ import threading
 import numpy as np
 
 import bittensor as bt
-from fastapi import Request
-from pydantic import BaseModel
+
+# Sanic imports
+from sanic import Sanic
+from sanic.request import Request
+from sanic.response import json
 
 from veridex_protocol import VeridexSynapse, SourceEvidence
 from validator.quality_model import VeridexQualityModel
 from validator.active_tester import StatementGenerator
 from validator.snippet_fetcher import SnippetFetcher  # We still use Selenium from here
 
-
-class VeridexQuery(BaseModel):
-    statement: str
-    sources: list[str] = []
-
+app = Sanic("VeridexApp")
 
 class VeridexValidator:
     def __init__(self):
@@ -46,22 +45,6 @@ class VeridexValidator:
 
         # Probability of “active test” each cycle
         self.active_test_prob = 0.3
-
-        self.axon = bt.axon(
-            wallet=self.wallet,
-            netuid=self.config.netuid,
-            ip="0.0.0.0",
-            port=8080,
-            max_workers=10
-        )
-        # The underlying FastAPI app:
-        self.app = self.axon.server.app
-
-        @self.app.post("/veridex_query")
-        async def veridex_query(data: VeridexQuery, request: Request):
-            """Your custom endpoint piggybacking on the Axon server."""
-            result = self.handle_veridex_query(data.statement, data.sources)
-            return result
 
     def get_config(self):
         parser = argparse.ArgumentParser()
@@ -116,7 +99,12 @@ class VeridexValidator:
             bt.logging.info(f"Running validator on uid: {self.my_subnet_uid}")
 
     def run(self):
-        self.axon.start()  # By default, starts in background thread
+        # Start the Sanic server in a separate thread
+        server_thread = threading.Thread(
+            target=lambda: app.run(host="0.0.0.0", port=8080, debug=False, access_log=False),
+            daemon=True
+        )
+        server_thread.start()
 
         bt.logging.info("Starting validator main loop.")
         while True:
@@ -163,6 +151,11 @@ class VeridexValidator:
 
     def handle_veridex_query(self, statement: str, sources: list,
                              is_test: bool=False, is_nonsense: bool=False) -> dict:
+        """
+        1) Query subset of miners with the statement.
+        2) For each valid response, verify snippet is truly on page (with Selenium).
+        3) Apply domain factor, speed factor, nonsense penalty, etc.
+        """
         subset_axons = self._select_miner_subset(k=5)
         synapse = VeridexSynapse(statement=statement, sources=sources)
 
@@ -178,9 +171,11 @@ class VeridexValidator:
             miner_hotkey = axon_info.hotkey
             miner_uid = self._hotkey_to_uid(miner_hotkey)
             if miner_uid is None:
+                # Not found or invalid
                 continue
 
             if resp is None or resp.veridex_response is None:
+                # No or invalid response => penalty
                 final_score = -2.0
                 self._update_moving_score(miner_uid, final_score)
                 response_data.append({
@@ -193,6 +188,7 @@ class VeridexValidator:
 
             responded_hotkeys.add(miner_hotkey)
 
+            # We'll do domain factor, roberta scoring, and also snippet-check
             snippet_distribs = []
             domain_counts = {}
             sum_of_snippets = 0.0
@@ -200,6 +196,7 @@ class VeridexValidator:
             for evid in resp.veridex_response:
                 snippet_str = evid.excerpt.strip()
                 if not snippet_str:
+                    # If snippet is empty, penalize
                     snippet_score = -1.0
                     snippet_distribs.append({
                         "domain": self._extract_domain(evid.url),
@@ -210,6 +207,7 @@ class VeridexValidator:
                     sum_of_snippets += snippet_score
                     continue
 
+                # Check snippet is indeed in the final rendered HTML
                 snippet_found = self._verify_snippet_in_rendered_page(evid.url, snippet_str)
                 if not snippet_found:
                     snippet_score = -1.0
@@ -222,11 +220,13 @@ class VeridexValidator:
                     sum_of_snippets += snippet_score
                     continue
 
+                # Domain factor
                 domain = self._extract_domain(evid.url)
                 times_used = domain_counts.get(domain, 0)
                 domain_factor = 1.0 / (2 ** times_used)
                 domain_counts[domain] = times_used + 1
 
+                # Score snippet with RoBERTa
                 probs, local_score = self.quality_model.score_pair_distrib(statement, snippet_str)
                 snippet_final = local_score * domain_factor
 
@@ -242,13 +242,20 @@ class VeridexValidator:
                 })
                 sum_of_snippets += snippet_final
 
+            # speed factor
             speed_factor = max(0.0, 1.0 - (elapsed / 15.0))
+
+            # final_score
             final_score = sum_of_snippets * speed_factor
 
+            # nonsense penalty
             if is_test and is_nonsense and final_score > 0.5:
                 final_score -= 1.0
 
+            # clamp
             final_score = max(-3.0, min(3.0, final_score))
+
+            # update moving score
             self._update_moving_score(miner_uid, final_score)
 
             response_data.append({
@@ -274,8 +281,13 @@ class VeridexValidator:
         }
 
     def _verify_snippet_in_rendered_page(self, url: str, snippet_text: str) -> bool:
+        """
+        Use SnippetFetcher to get the final rendered HTML (JS included).
+        Return True if snippet_text is a substring of that HTML.
+        """
         try:
             page_html = self.fetcher.fetch_entire_page(url)
+            # do a simple substring check
             return snippet_text in page_html
         except:
             return False
@@ -301,6 +313,23 @@ class VeridexValidator:
             return parts[0].lower()
         return url.lower()
 
+# Global reference
+validator_instance: VeridexValidator = None
+
+@app.post("/veridex_query")
+async def veridex_query(request: Request):
+    if not request.json or "statement" not in request.json:
+        return json({"status": "error", "message": "Missing 'statement' in JSON"}, status=400)
+
+    statement = request.json["statement"]
+    sources = request.json.get("sources", [])
+
+    global validator_instance
+    if validator_instance is None:
+        return json({"status": "error", "message": "Validator not initialized"}, status=500)
+
+    result = validator_instance.handle_veridex_query(statement, sources)
+    return json(result)
 
 if __name__ == "__main__":
     validator_instance = VeridexValidator()
