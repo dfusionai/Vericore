@@ -4,14 +4,39 @@ import argparse
 import traceback
 import bittensor as bt
 from typing import Tuple, List
+import json
 
 from veridex_protocol import VeridexSynapse, SourceEvidence
+
+# Suppose you installed "perplexity-openai" or an equivalent package:
+#   pip install perplexity-openai
+# or you have the "openai" style client from perplexity
+from openai import OpenAI
+
+# Selenium imports
+from selenium import webdriver
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.chrome.service import Service
+from webdriver_manager.chrome import ChromeDriverManager
+from lxml import html
 
 class Miner:
     def __init__(self):
         self.config = self.get_config()
         self.setup_logging()
         self.setup_bittensor_objects()
+
+        # Load your Perplexity AI key from config or environment
+        self.perplexity_api_key = os.environ.get("PERPLEXITY_API_KEY", "YOUR_API_KEY_HERE")
+        if not self.perplexity_api_key or self.perplexity_api_key.startswith("YOUR_API_KEY_HERE"):
+            bt.logging.warning("No PERPLEXITY_API_KEY found in environment. Please set it to use Perplexity.")
+        
+        # Initialize the "openai"-like client for Perplexity
+        # base_url="https://api.perplexity.ai" as per your instructions
+        self.perplexity_client = OpenAI(
+            api_key=self.perplexity_api_key,
+            base_url="https://api.perplexity.ai"
+        )
 
     def get_config(self):
         parser = argparse.ArgumentParser()
@@ -71,7 +96,6 @@ class Miner:
             bt.logging.info(f"Running miner on uid: {self.my_subnet_uid}")
 
     def blacklist_fn(self, synapse: VeridexSynapse) -> Tuple[bool, str]:
-        # basic check for recognized hotkeys
         if synapse.dendrite.hotkey not in self.metagraph.hotkeys:
             bt.logging.trace(
                 f"Blacklisting unrecognized hotkey {synapse.dendrite.hotkey}"
@@ -84,50 +108,131 @@ class Miner:
 
     def veridex_forward(self, synapse: VeridexSynapse) -> VeridexSynapse:
         """
-        Naive logic that returns a couple of made-up snippet references.
-        Typically, you'd want to do real searching or indexing here. 
+        1) Query Perplexity AI with your exact system+user messages format.
+        2) Parse the JSON from the response (a string with "url", "snippet").
+        3) For each snippet, fetch the snippet in the DOM and build SourceEvidence.
         """
-        # Example: we look at the statement, do a naive check if "Bitcoin" is in it
-        # and pick a relevant snippet. Otherwise return generic snippet(s).
+        statement = synapse.statement
+        # 1) Call Perplexity
+        perplexity_results = self.call_perplexity_ai(statement)
+        if not perplexity_results:
+            # fallback in case of error or empty result
+            synapse.veridex_response = []
+            return synapse
 
-        example_response = []
-        if "bitcoin" in synapse.statement.lower():
-            # Suppose we "found" a snippet on Wikipedia
-            e1 = SourceEvidence(
-                url="https://en.wikipedia.org/wiki/Bitcoin",
-                xpath="//div[@id='mw-content-text']",
-                start_char=0,
-                end_char=200,
-                excerpt="Bitcoin is a decentralized digital currency..."
-            )
-            example_response.append(e1)
-            # Another random one
-            e2 = SourceEvidence(
-                url="https://cointelegraph.com/bitcoin-article",
-                xpath="//body/article[1]",
-                start_char=0,
-                end_char=150,
-                excerpt="Cointelegraph coverage of Bitcoin suggests..."
-            )
-            example_response.append(e2)
-        else:
-            # Generic response if we have no special logic
-            e3 = SourceEvidence(
-                url="https://en.wikipedia.org/wiki/Example",
-                xpath="//div[@id='mw-content-text']",
-                start_char=0,
-                end_char=120,
-                excerpt="Example domain text about something..."
-            )
-            example_response.append(e3)
+        # 2) For each snippet, attempt to fetch + locate snippet
+        final_responses = []
+        for item in perplexity_results:
+            url = item.get("url", "").strip()
+            snippet_text = item.get("snippet", "").strip()
+            if not url or not snippet_text:
+                continue
+            try:
+                xpath, start_char, end_char = self.fetch_xpath_offset(url, snippet_text)
+                se = SourceEvidence(
+                    url=url,
+                    xpath=xpath,
+                    start_char=start_char,
+                    end_char=end_char,
+                    excerpt=snippet_text
+                )
+                final_responses.append(se)
+            except Exception as e:
+                bt.logging.warn(f"Could not fetch snippet from {url}: {e}")
+                continue
 
-        synapse.veridex_response = example_response
-
-        bt.logging.info(
-            f"Miner received statement: '{synapse.statement}' with sources: {synapse.sources}.\n"
-            f"Returning {synapse.veridex_response}"
-        )
+        synapse.veridex_response = final_responses
         return synapse
+
+    def call_perplexity_ai(self, statement: str) -> List[dict]:
+        """
+        Use the exact 'messages' structure with system + user roles.
+        Model = 'sonar-pro'
+        Then parse the text of the completion as JSON.
+        Return a list of {url, snippet} dicts or empty on error.
+        """
+        system_content = """
+You are a helpful AI assistant that fact checks statements.
+
+Rules:
+1. Provide only a list of final URLs and the snippets in json form [{\"url\": <source url>, \"snippet\": <snippet that directly agrees with or contradicts statement>}]. It is important that you do not include any explanation on the steps below.
+2. Do not show the intermediate steps information.
+
+Steps:
+1. Find sources / text segments that either contradict or agree with the user provided statement.
+2. Pick and extract the segments that most strongly agree or contradict the statement.
+3. Do not return urls or segments that do not directly support or disagree with the statement. (no intermediate definitions even if used to pull your statement)
+4. Do not change any text in the segments, but do shorten the segment to get only the part that directly agrees or disagrees with the statement. (Don't need the surrounding paragraph)
+5. Create the json object for each source and statement and collect them into a list.
+"""
+        user_content = (
+            f"Return snippets that strongly agree with or reject the following statement:\n{statement}"
+        )
+
+        messages = [
+            {"role": "system", "content": system_content},
+            {"role": "user", "content": user_content},
+        ]
+
+        try:
+            # chat completion call
+            response = self.perplexity_client.chat.completions.create(
+                model="sonar-pro",
+                messages=messages,
+                stream=False  # We do not want streaming
+            )
+
+            # 'response' is typically an object with .choices, etc.
+            # We'll assume the final text is in response.choices[0].message.content
+            if not hasattr(response, "choices") or len(response.choices) == 0:
+                bt.logging.warn(f"Perplexity returned no choices: {response}")
+                return []
+            raw_text = response.choices[0].message.content.strip()
+
+            # The raw_text should be a JSON array as we requested
+            # Attempt to parse
+            data = json.loads(raw_text)
+            if not isinstance(data, list):
+                bt.logging.warn(f"Perplexity response is not a list: {data}")
+                return []
+            return data
+        except Exception as e:
+            bt.logging.error(f"Error calling Perplexity AI: {e}")
+            return []
+
+    def fetch_xpath_offset(self, url: str, snippet_text: str):
+        """
+        Launch headless Chrome, get page content, find snippet_text in DOM text nodes,
+        return (xpath, start_char, end_char).
+        """
+        chrome_options = Options()
+        chrome_options.add_argument("--headless")
+        service = Service(ChromeDriverManager().install())
+        driver = webdriver.Chrome(service=service, options=chrome_options)
+        driver.get(url)
+        html_content = driver.page_source
+        driver.quit()
+
+        tree = html.fromstring(html_content)
+        text_nodes = tree.xpath("//text()")
+
+        for node in text_nodes:
+            full_text = node
+            if not isinstance(full_text, str):
+                continue
+            full_text_str = full_text.strip()
+            if not full_text_str:
+                continue
+
+            idx = full_text_str.find(snippet_text)
+            if idx != -1:
+                element = node.getparent()  # The parent element
+                xpath = tree.getpath(element)
+                start_char = idx
+                end_char = idx + len(snippet_text)
+                return xpath, start_char, end_char
+
+        raise ValueError("Snippet not found in DOM")
 
     def setup_axon(self):
         self.axon = bt.axon(wallet=self.wallet, config=self.config)
@@ -147,7 +252,7 @@ class Miner:
 
     def run(self):
         self.setup_axon()
-        bt.logging.info(f"Starting main loop")
+        bt.logging.info("Starting main loop")
         step = 0
         while True:
             try:
