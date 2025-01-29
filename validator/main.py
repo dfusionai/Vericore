@@ -271,6 +271,7 @@ class VeridexValidator:
                 sum_of_snippets += snippet_final
 
             # speed factor
+            # todo elapsed time should be per miner and not total time elapsed
             speed_factor = max(0.0, 1.0 - (elapsed / 15.0))
 
             # final_score
