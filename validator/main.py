@@ -14,13 +14,14 @@ import asyncio
 from sanic import Sanic
 from sanic.request import Request
 from sanic.response import json
-
+from sanic_ext import Extend
 # Bittensor and Validator
 import bittensor as bt
 from veridex_protocol import VeridexSynapse, SourceEvidence
 from validator.quality_model import VeridexQualityModel
 from validator.active_tester import StatementGenerator
 from validator.snippet_fetcher import SnippetFetcher
+
 
 
 ########################################
@@ -341,10 +342,21 @@ class VeridexValidator:
 ########################################
 app = Sanic("VeridexQueueApp")
 
+# DEBUG ONLY
+app.config.CORS_ORIGIN = "http://localhost:4200"
+app.config.REQUEST_TIMEOUT = 300  # 5 minutes
+app.config.RESPONSE_TIMEOUT = 300  # 5 minutes
+Extend(app)
+
 # We'll keep references to the queue + result_dict (populated by the validator).
 task_queue = None
 result_dict = None
 
+
+@app.middleware("response")
+async def update_headers(request, response):
+    origin = request.headers.get("origin")
+    response.headers.update({"Access-Control-Allow-Origin": origin})
 
 @app.post("/veridex_query")
 async def veridex_query(request: Request):

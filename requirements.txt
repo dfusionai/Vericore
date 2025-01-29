@@ -7,3 +7,4 @@ torch
 pydantic
 transformers
 selenium
+sanic_ext
