@@ -14,13 +14,14 @@ import asyncio
 from sanic import Sanic
 from sanic.request import Request
 from sanic.response import json
-
+from sanic_ext import Extend
 # Bittensor and Validator
 import bittensor as bt
 from veridex_protocol import VeridexSynapse, SourceEvidence
 from validator.quality_model import VeridexQualityModel
 from validator.active_tester import StatementGenerator
 from validator.snippet_fetcher import SnippetFetcher
+
 
 
 ########################################
@@ -217,7 +218,7 @@ class VeridexValidator:
                 continue
 
             # We'll do domain factor, roberta scoring, snippet-check, etc.
-            snippet_distribs = []
+            vericore_responses = []
             domain_counts = {}
             sum_of_snippets = 0.0
 
@@ -226,8 +227,10 @@ class VeridexValidator:
                 if not snippet_str:
                     # If snippet is empty, penalize
                     snippet_score = -1.0
-                    snippet_distribs.append({
-                        "domain": self._extract_domain(evid.url),
+                    vericore_responses.append({
+	                      "url": evid.url,
+	                      "excerpt": evid.excerpt,
+	                      "domain": self._extract_domain(evid.url),
                         "snippet_found": False,
                         "local_score": 0.0,
                         "snippet_score": snippet_score
@@ -238,8 +241,10 @@ class VeridexValidator:
                 snippet_found = self._verify_snippet_in_rendered_page(evid.url, snippet_str)
                 if not snippet_found:
                     snippet_score = -1.0
-                    snippet_distribs.append({
-                        "domain": self._extract_domain(evid.url),
+                    vericore_responses.append({
+		                    "url": evid.url,
+		                    "excerpt": evid.excerpt,
+		                    "domain": self._extract_domain(evid.url),
                         "snippet_found": False,
                         "local_score": 0.0,
                         "snippet_score": snippet_score
@@ -257,8 +262,10 @@ class VeridexValidator:
                 probs, local_score = self.quality_model.score_pair_distrib(statement, snippet_str)
                 snippet_final = local_score * domain_factor
 
-                snippet_distribs.append({
-                    "domain": domain,
+                vericore_responses.append({
+		                "url": evid.url,
+		                "excerpt": evid.excerpt,
+		                "domain": domain,
                     "snippet_found": True,
                     "domain_factor": domain_factor,
                     "contradiction": probs["contradiction"],
@@ -270,6 +277,7 @@ class VeridexValidator:
                 sum_of_snippets += snippet_final
 
             # speed factor
+            # todo elapsed time should be per miner and not total time elapsed
             speed_factor = max(0.0, 1.0 - (elapsed / 15.0))
 
             # final_score
@@ -291,13 +299,7 @@ class VeridexValidator:
                 "status": "ok",
                 "speed_factor": speed_factor,
                 "final_score": final_score,
-                "veridex_response": [
-                    {
-                        "url": e.url,
-                        "excerpt": e.excerpt
-                    } for e in resp.veridex_response
-                ],
-                "snippet_distributions": snippet_distribs
+                "vericore_responses": vericore_responses
             })
 
         return {
@@ -341,10 +343,21 @@ class VeridexValidator:
 ########################################
 app = Sanic("VeridexQueueApp")
 
+# DEBUG ONLY
+app.config.CORS_ORIGIN = "http://localhost:4200"
+app.config.REQUEST_TIMEOUT = 300  # 5 minutes
+app.config.RESPONSE_TIMEOUT = 300  # 5 minutes
+Extend(app)
+
 # We'll keep references to the queue + result_dict (populated by the validator).
 task_queue = None
 result_dict = None
 
+
+@app.middleware("response")
+async def update_headers(request, response):
+    origin = request.headers.get("origin")
+    response.headers.update({"Access-Control-Allow-Origin": origin})
 
 @app.post("/veridex_query")
 async def veridex_query(request: Request):
