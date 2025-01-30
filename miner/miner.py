@@ -6,6 +6,8 @@ import bittensor as bt
 import json
 from typing import Tuple, List
 
+from dotenv import load_dotenv
+
 from veridex_protocol import VeridexSynapse, SourceEvidence
 
 # "openai" client from perplexity
@@ -17,6 +19,7 @@ class Miner:
         self.setup_logging()
         self.setup_bittensor_objects()
 
+        load_dotenv()
         # Load Perplexity AI key
         self.perplexity_api_key = os.environ.get("PERPLEXITY_API_KEY", "YOUR_API_KEY_HERE")
         if not self.perplexity_api_key or self.perplexity_api_key.startswith("YOUR_API_KEY_HERE"):
