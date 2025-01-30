@@ -218,7 +218,7 @@ class VeridexValidator:
                 continue
 
             # We'll do domain factor, roberta scoring, snippet-check, etc.
-            snippet_distribs = []
+            vericore_responses = []
             domain_counts = {}
             sum_of_snippets = 0.0
 
@@ -227,8 +227,10 @@ class VeridexValidator:
                 if not snippet_str:
                     # If snippet is empty, penalize
                     snippet_score = -1.0
-                    snippet_distribs.append({
-                        "domain": self._extract_domain(evid.url),
+                    vericore_responses.append({
+	                      "url": evid.url,
+	                      "excerpt": evid.excerpt,
+	                      "domain": self._extract_domain(evid.url),
                         "snippet_found": False,
                         "local_score": 0.0,
                         "snippet_score": snippet_score
@@ -239,8 +241,10 @@ class VeridexValidator:
                 snippet_found = self._verify_snippet_in_rendered_page(evid.url, snippet_str)
                 if not snippet_found:
                     snippet_score = -1.0
-                    snippet_distribs.append({
-                        "domain": self._extract_domain(evid.url),
+                    vericore_responses.append({
+		                    "url": evid.url,
+		                    "excerpt": evid.excerpt,
+		                    "domain": self._extract_domain(evid.url),
                         "snippet_found": False,
                         "local_score": 0.0,
                         "snippet_score": snippet_score
@@ -258,8 +262,10 @@ class VeridexValidator:
                 probs, local_score = self.quality_model.score_pair_distrib(statement, snippet_str)
                 snippet_final = local_score * domain_factor
 
-                snippet_distribs.append({
-                    "domain": domain,
+                vericore_responses.append({
+		                "url": evid.url,
+		                "excerpt": evid.excerpt,
+		                "domain": domain,
                     "snippet_found": True,
                     "domain_factor": domain_factor,
                     "contradiction": probs["contradiction"],
@@ -293,13 +299,7 @@ class VeridexValidator:
                 "status": "ok",
                 "speed_factor": speed_factor,
                 "final_score": final_score,
-                "veridex_response": [
-                    {
-                        "url": e.url,
-                        "excerpt": e.excerpt
-                    } for e in resp.veridex_response
-                ],
-                "snippet_distributions": snippet_distribs
+                "vericore_responses": vericore_responses
             })
 
         return {
