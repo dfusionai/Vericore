@@ -1,1 +1,10 @@
-bittensor>=8.5.1
+git+https://github.com/opentensor/bittensor.git@staging#egg=bittensor
+sanic
+webdriver_manager
+lxml
+openai
+torch
+pydantic
+transformers
+selenium
+sanic_ext
