@@ -7,6 +7,3 @@ torch
 pydantic
 transformers
 selenium
-sentence-transformers
-datasets
-annoy

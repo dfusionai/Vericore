@@ -51,9 +51,10 @@ bittensor_subnet/
 
 Before you begin, ensure you have the following installed:
 
-- Python 3.10 or higher
+- Python 3.10 or higher (Currently 3.13 isn't supported in certain packages)
 - [Git](https://git-scm.com/)
 - [Bittensor SDK](https://github.com/opentensor/bittensor)
+  - Requirements for bittensor sdk includes Rust and Cargo
 
 ## Setup Instructions
 
@@ -70,13 +71,109 @@ cd bittensor_subnet
 
 Install the required Python packages:
 
+> **Note**: It's recommended to use a virtual environment to manage dependencies.
+>
+#### Rust and Cargo
+
+Rust is the programming language used in Substrate development. Cargo is Rust package manager.
+
+Install rust and cargo:
+
+```bash
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+```
+
+Update your shell's source to include Cargo's path:
+```bash
+source "$HOME/.cargo/env"
+```
+
+#### Bittensor Cli
+
 ```bash
 pip install bittensor
 ```
 
-> **Note**: It's recommended to use a virtual environment to manage dependencies.
+### 3. Running a blockchain locally
 
-### 3. Create Wallets
+This section is for running a local blockchain. The full tutorial is found here:
+https://github.com/opentensor/bittensor-subnet-template/blob/main/docs/running_on_staging.md
+
+#### Install Substrate dependencies
+
+Update your system packages:
+
+```bash
+sudo apt update
+```
+
+Install additional required libraries and tools
+
+```bash
+sudo apt install --assume-yes make build-essential git clang curl libssl-dev llvm libudev-dev protobuf-compiler
+```
+
+#### Install Rust and Cargo
+
+#### Clone the subtensor repo
+
+This step fetches the subtensor codebase to your local machine.
+
+```bash
+git clone https://github.com/opentensor/subtensor.git
+```
+
+#### Setup Rust
+
+Update to the nightly version of Rust:
+
+```bash
+./subtensor/scripts/init.sh
+```
+
+#### Initialize local subtensor chain into development
+
+First run localnet.sh to build the binary with fast-blocks switched off:
+
+```bash
+BUILD_BINARY=1 ./scripts/localnet.sh False
+```
+
+> **Note**: You should first go into the subtensor directory before running this command.
+
+**Note**: The --features pow-faucet option in the above is required if we want to use the command btcli wallet faucet See the below Mint tokens step.
+
+Next, run the localnet script with build binary off, no fast block, and to not purge history:
+
+```bash
+BUILD_BINARY=0 ./scripts/localnet.sh False --no-purge
+```
+
+We are running with fast-block off and using localnet.sh due to the following issues:
+https://github.com/opentensor/bittensor-subnet-template/issues/118#issuecomment-2547474216
+https://github.com/opentensor/bittensor-subnet-template/issues/118#issuecomment-2552609160
+
+**Note**: Watch for any build or initialization outputs in this step. If you are building the project for the first time, this step will take a while to finish building, depending on your hardware.
+
+
+#### Mint tokens from faucet
+
+Minting from the faucet requires torch
+
+```bash
+pip install torch
+```
+
+Mint faucet tokens for the wallet:
+
+```bash
+btcli wallet faucet --wallet.name owner --subtensor.chain_endpoint ws://127.0.0.1:9945
+```
+
+Look at localnet.sh to see which ports are running.
+
+
+### 4. Create Wallets
 
 You'll need to create wallets for both the miner and validator.
 
@@ -104,6 +201,13 @@ The `btcli` tool is used to manage wallets and keys.
      btcli w new_hotkey --wallet.name mywallet --wallet.hotkey validator_hotkey
      ```
 
+### 4. Create a subnet
+
+The below commands establish a new subnet on the local chain. The cost will be exactly τ1000.000000000 for the first subnet you create and you'll have to run the faucet several times to get enough tokens.
+
+     ```bash
+		 btcli subnet create --wallet.name owner --subtensor.chain_endpoint ws://127.0.0.1:9946
+			```
 ### 4. Register Wallets
 
 Register both the miner and validator on the Bittensor network.
@@ -111,18 +215,19 @@ Register both the miner and validator on the Bittensor network.
 - **Register the Miner**:
 
   ```bash
-  btcli s register --wallet.name mywallet --wallet.hotkey miner_hotkey --subtensor.network finney
+  btcli s register --wallet.name mywallet --wallet.hotkey miner_hotkey --subtensor.chain_endpoint ws://127.0.0.1:9944
   ```
 
 - **Register the Validator**:
 
   ```bash
-  btcli s register --wallet.name mywallet --wallet.hotkey validator_hotkey --subtensor.network finney
+  btcli s register --wallet.name mywallet --wallet.hotkey validator_hotkey --subtensor.chain_endpoint ws://127.0.0.1:9944
   ```
 
-> **Note**: Replace `finney` with the name of the network you are connecting to if different.
+> **Note**: Replace `ws://127.0.0.1:9944` with the name of the network you are connecting to if different.
 
 ---
+
 
 ## Running the Miner and Validator
 
@@ -131,7 +236,7 @@ Register both the miner and validator on the Bittensor network.
 In one terminal window, navigate to the project directory and run:
 
 ```bash
-python miner.py --wallet.name mywallet --wallet.hotkey miner_hotkey --subtensor.network finney --axon.port 8901
+python miner.py --wallet.name mywallet --wallet.hotkey miner_hotkey --subtensor.chain_endpoint ws://127.0.0.1:9944 --axon.port 8901
 ```
 
 **Arguments**:
@@ -145,7 +250,7 @@ python miner.py --wallet.name mywallet --wallet.hotkey miner_hotkey --subtensor.
 In another terminal window, navigate to the project directory and run:
 
 ```bash
-python validator.py --wallet.name mywallet --wallet.hotkey validator_hotkey --subtensor.network finney
+python validator.py --wallet.name mywallet --wallet.hotkey validator_hotkey --subtensor.chain_endpoint ws://127.0.0.1:9944
 ```
 
 **Arguments**:
