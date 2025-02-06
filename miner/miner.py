@@ -122,7 +122,7 @@ Steps:
 1. Find sources / text segments that either contradict or agree with the user provided statement.
 2. Pick and extract the segments that most strongly agree or contradict the statement.
 3. Do not return urls or segments that do not directly support or disagree with the statement. 
-4. Do not change any text in the segments, but do shorten the segment to get only the part that directly agrees or disagrees with the statement.
+4. Do not change any text in the segments (must return an exact html text match), but do shorten the segment to get only the part that directly agrees or disagrees with the statement.
 5. Create the json object for each source and statement and collect them into a list.
 """
         user_content = f"Return snippets that strongly agree with or reject the following statement:\n{statement}"

@@ -1,4 +1,4 @@
-git+https://github.com/opentensor/bittensor.git@staging#egg=bittensor
+git+https://github.com/opentensor/bittensor.git@v9.0.0rc1#egg=bittensor
 sanic
 webdriver_manager
 lxml
@@ -7,3 +7,6 @@ torch
 pydantic
 transformers
 selenium
+sentence-transformers
+datasets
+annoy
