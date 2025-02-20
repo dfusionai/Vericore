@@ -16,9 +16,10 @@ class VeridexSynapse(bt.Synapse):
       - statement (str)
       - sources (List[str]) [Optional "preferred" sources, or references]
     Outputs:
-      - veridex_response: A list of SourceEvidence items. 
+      - veridex_response: A list of SourceEvidence items.
         Each describes a snippet that corroborates or refutes the statement.
     """
+    request_id: str = None
     statement: str
     sources: typing.List[str] = []
     veridex_response: typing.Optional[typing.List[SourceEvidence]] = None
