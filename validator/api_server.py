@@ -119,7 +119,6 @@ class APIQueryHandler:
           local_score = 0.0,
           snippet_score = snippet_score
         )
-        # bt.logging.info(f'************* process_veridex_response: {json.dumps(asdict(veridex_miner_response))}')
         return veridex_miner_response
 
       bt.logging.info(f'Verifying Snippet: {request_id}')
@@ -135,16 +134,13 @@ class APIQueryHandler:
           local_score = 0.0,
           snippet_score = snippet_score
         )
-        # bt.logging.info(f'************* process_veridex_response: {json.dumps(asdict(veridex_miner_response))}')
         return veridex_miner_response
 
       domain = self._extract_domain(evid.url)
       # times_used = domain_counts.get(domain, 0)
       # domain_factor = 1.0 / (2 ** times_used)
       # domain_counts[domain] = times_used + 1
-      bt.logging.info(f"Scoring Pair Distribution {request_id}")
       probs, local_score = self.quality_model.score_pair_distrib(statement, snippet_str)
-      bt.logging.info(f"Pair Distribution Scored {request_id}")
       # snippet_final = local_score * domain_factor
       veridex_miner_response = VericoreStatementResponse(
         url = evid.url,
@@ -158,7 +154,6 @@ class APIQueryHandler:
         local_score = local_score,
         snippet_score = 0
       )
-      # bt.logging.info(f'************* process_veridex_response: {json.dumps(asdict(veridex_miner_response))}')
       return veridex_miner_response
 
     async def handle_veridex_query(self, request_id: str, statement: str, sources: list,
@@ -174,15 +169,6 @@ class APIQueryHandler:
         subset_axons = self._select_miner_subset(k=5)
         bt.logging.info(f'subset_axons: {request_id}')
         synapse = VeridexSynapse(statement=statement, sources=sources, request_id=request_id)
-        # start_time = time.time()
-        # responses = await self.dendrite.forward(axons=subset_axons, synapse=synapse, timeout=120, deserialize=True)
-        # end_time = time.time()
-        # elapsed = end_time - start_time + 1e-9
-        # bt.logging.debug(responses)
-
-        # for index, axon in subset_axons:
-        #   bt.logging.info(f"******** Calling subset axon: {axon}")
-        #   self.dendrite.call(target_axon=axon, synapse=synapse, timeout=120, deserialize=True)
 
         responses = await asyncio.gather(*[
 	        self.call_axon(target_axon=axon, request_id=request_id, synapse=synapse)	for axon in subset_axons
@@ -224,11 +210,9 @@ class APIQueryHandler:
             domain_counts = {}
             sum_of_snippets = 0.0
 
-            bt.logging.info(f'Validating Miner Statement Scores: {request_id}, ', vericore_statement_responses)
+            bt.logging.info(f'Validating Miner Statement Scores: {request_id}, ')
             # Check how many times the domain count was reused
             for statement_response in vericore_statement_responses:
-               bt.logging.info(f'vericore_statement_responses: {statement_response}')
-
                if statement_response.snippet_found:
                  times_used = domain_counts.get(statement_response.domain, 0)
                  domain_counts[statement_response.domain] = times_used + 1
