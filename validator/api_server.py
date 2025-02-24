@@ -1,11 +1,10 @@
 import os
 import time
 import random
-import traceback
 import argparse
 import asyncio
 import json
-import numpy as np
+from typing import List
 
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import JSONResponse
@@ -17,21 +16,18 @@ import bittensor as bt
 
 print('before veridex_protocol')
 
-from veridex_protocol import VeridexSynapse, SourceEvidence
+from veridex_protocol import VeridexSynapse, SourceEvidence, VeridexResponse, VericoreStatementResponse,  VericoreMinerStatementResponse, VericoreQueryResponse
+
 from validator.quality_model import VeridexQualityModel
 from validator.active_tester import StatementGenerator
 from validator.snippet_fetcher import SnippetFetcher
 
 
+from dataclasses import asdict
+
 # debug
 bt.logging.set_trace()
 
-from dataclasses import dataclass
-
-@dataclass
-class VeridexResponse:
-   synapse: VeridexSynapse
-   elapse_time: float
 
 ###############################################################################
 # APIQueryHandler: handles miner queries, scores responses, and writes each
@@ -110,57 +106,63 @@ class APIQueryHandler:
         veridex_response.elapse_time = elapsed
         return veridex_response
 
-    def process_veridex_response(self, request_id, evid, statement):
-      bt.logging.info(f"************ Processing Veridex response: {request_id}")
+    async def process_veridex_response(self, request_id, evid, statement):
+      bt.logging.info(f"Processing Veridex response: {request_id}")
       snippet_str = evid.excerpt.strip()
       if not snippet_str:
         snippet_score = -1.0
-        return {
-			    "url": evid.url,
-			    "excerpt": evid.excerpt,
-			    "domain": self._extract_domain(evid.url),
-			    "snippet_found": False,
-			    "local_score": 0.0,
-			    "snippet_score": snippet_score
-		    }
+        veridex_miner_response = VericoreStatementResponse(
+	        url=evid.url,
+          excerpt = evid.excerpt,
+          domain = self._extract_domain(evid.url),
+          snippet_found = False,
+          local_score = 0.0,
+          snippet_score = snippet_score
+        )
+        # bt.logging.info(f'************* process_veridex_response: {json.dumps(asdict(veridex_miner_response))}')
+        return veridex_miner_response
 
-      bt.logging.info(f'************* Verifying Snippet: {request_id}')
+      bt.logging.info(f'Verifying Snippet: {request_id}')
       snippet_found = self._verify_snippet_in_rendered_page(evid.url, snippet_str)
-      bt.logging.info(f'************* Snippet Verified: {request_id} : {snippet_found}')
+      bt.logging.info(f'Snippet Verified: {request_id} : {snippet_found}')
       if not snippet_found:
         snippet_score = -1.0
-        return {
-			    "url": evid.url,
-			    "excerpt": evid.excerpt,
-			    "domain": self._extract_domain(evid.url),
-			    "snippet_found": False,
-			    "local_score": 0.0,
-			    "snippet_score": snippet_score
-		    }
+        veridex_miner_response = VericoreStatementResponse(
+  	      url=evid.url,
+          excerpt = evid.excerpt,
+          domain = self._extract_domain(evid.url),
+          snippet_found = False,
+          local_score = 0.0,
+          snippet_score = snippet_score
+        )
+        # bt.logging.info(f'************* process_veridex_response: {json.dumps(asdict(veridex_miner_response))}')
+        return veridex_miner_response
+
       domain = self._extract_domain(evid.url)
       # times_used = domain_counts.get(domain, 0)
       # domain_factor = 1.0 / (2 ** times_used)
       # domain_counts[domain] = times_used + 1
-      bt.logging.info(f"********** Scoring Pair Distribution {request_id}")
+      bt.logging.info(f"Scoring Pair Distribution {request_id}")
       probs, local_score = self.quality_model.score_pair_distrib(statement, snippet_str)
-      bt.logging.info(f"********** Pair Distribution Scored {request_id}")
+      bt.logging.info(f"Pair Distribution Scored {request_id}")
       # snippet_final = local_score * domain_factor
-      return {
-		    "url": evid.url,
-		    "excerpt": evid.excerpt,
-		    "domain": domain,
-		    "snippet_found": True,
-		    "domain_factor": 0,
-		    "contradiction": probs["contradiction"],
-		    "neutral": probs["neutral"],
-		    "entailment": probs["entailment"],
-		    "local_score": local_score,
-		    "snippet_score": 0
-	    }
-
+      veridex_miner_response = VericoreStatementResponse(
+        url = evid.url,
+        excerpt = evid.excerpt,
+        domain = domain,
+        snippet_found = True,
+        domain_factor = 0,
+        contradiction = probs["contradiction"],
+        neutral = probs["neutral"],
+        entailment = probs["entailment"],
+        local_score = local_score,
+        snippet_score = 0
+      )
+      # bt.logging.info(f'************* process_veridex_response: {json.dumps(asdict(veridex_miner_response))}')
+      return veridex_miner_response
 
     async def handle_veridex_query(self, request_id: str, statement: str, sources: list,
-                              is_test: bool = False, is_nonsense: bool = False) -> dict:
+                              is_test: bool = False, is_nonsense: bool = False) -> VericoreQueryResponse:
         """
         1. Query a subset of miners with the given statement.
         2. Verify that each snippet is truly on the page.
@@ -168,9 +170,9 @@ class APIQueryHandler:
            the local moving_scores.
         4. Write the complete result (including final scores) to a uniquely named JSON file.
         """
-        bt.logging.info(f"************* handle_veridex_query {request_id}");
+        bt.logging.info(f"handle_veridex_query {request_id}");
         subset_axons = self._select_miner_subset(k=5)
-        bt.logging.info(f'************* subset_axons: {request_id}')
+        bt.logging.info(f'subset_axons: {request_id}')
         synapse = VeridexSynapse(statement=statement, sources=sources, request_id=request_id)
         # start_time = time.time()
         # responses = await self.dendrite.forward(axons=subset_axons, synapse=synapse, timeout=120, deserialize=True)
@@ -186,13 +188,13 @@ class APIQueryHandler:
 	        self.call_axon(target_axon=axon, request_id=request_id, synapse=synapse)	for axon in subset_axons
         ])
 
-        bt.logging.info(f'************* received miner information: {request_id}, {responses}')
+        bt.logging.info(f'Received miner information: {request_id}, {responses}')
         # If the query call returns None (instead of a list), substitute a list of None values
         if responses is None:
             bt.logging.warning("dendrite.query returned None; substituting with [None]*len(subset_axons)")
             responses = [None] * len(subset_axons)
 
-        bt.logging.info(f'************* Processing Response Data: {request_id}')
+        bt.logging.info(f'Processing Response Data: {request_id}')
         response_data = []
 
         for axon_info, resp in zip(subset_axons, responses):
@@ -204,71 +206,43 @@ class APIQueryHandler:
             if resp is None or resp.synapse.veridex_response is None:
                 final_score = -5.0
                 self._update_moving_score(miner_uid, final_score)
-                response_data.append({
-                    "miner_hotkey": miner_hotkey,
-                    "miner_uid": miner_uid,
-                    "status": "no_response",
-                    "raw_score": final_score
-                })
+                miner_statement = VericoreMinerStatementResponse(
+	                miner_hotkey = miner_hotkey,
+                  miner_uid = miner_uid,
+                  status = "no_response",
+                  raw_score = final_score
+                )
+                response_data.append(miner_statement)
                 continue
 
-            vericore_responses = []
+            vericore_statement_responses = await asyncio.gather(*[
+	            self.process_veridex_response(request_id=request_id, evid=miner_response, statement=statement) for miner_response in resp.synapse.veridex_response
+            ])
+
+            bt.logging.info(f'Processing Miner Statement Responses: {request_id}')
+
             domain_counts = {}
             sum_of_snippets = 0.0
 
-            # responses = await asyncio.gather(*[
-	          #   self.process_veridex_response(request_id=request_id, evid, statement) for axon in resp.synapse.veridex_response
-            # ])
+            bt.logging.info(f'Validating Miner Statement Scores: {request_id}, ', vericore_statement_responses)
+            # Check how many times the domain count was reused
+            for statement_response in vericore_statement_responses:
+               bt.logging.info(f'vericore_statement_responses: {statement_response}')
 
-            for evid in resp.synapse.veridex_response:
-                snippet_str = evid.excerpt.strip()
-                if not snippet_str:
-                    snippet_score = -1.0
-                    vericore_responses.append({
-                        "url": evid.url,
-                        "excerpt": evid.excerpt,
-                        "domain": self._extract_domain(evid.url),
-                        "snippet_found": False,
-                        "local_score": 0.0,
-                        "snippet_score": snippet_score
-                    })
-                    sum_of_snippets += snippet_score
-                    continue
+               if statement_response.snippet_found:
+                 times_used = domain_counts.get(statement_response.domain, 0)
+                 domain_counts[statement_response.domain] = times_used + 1
 
-                bt.logging.info(f'************* Verifying Snippet: {request_id}')
-                snippet_found = self._verify_snippet_in_rendered_page(evid.url, snippet_str)
-                bt.logging.info(f'************* Snippet Verified: {request_id} : {snippet_found}')
-                if not snippet_found:
-                    snippet_score = -1.0
-                    vericore_responses.append({
-                        "url": evid.url,
-                        "excerpt": evid.excerpt,
-                        "domain": self._extract_domain(evid.url),
-                        "snippet_found": False,
-                        "local_score": 0.0,
-                        "snippet_score": snippet_score
-                    })
-                    sum_of_snippets += snippet_score
-                    continue
-                domain = self._extract_domain(evid.url)
-                times_used = domain_counts.get(domain, 0)
-                domain_factor = 1.0 / (2 ** times_used)
-                domain_counts[domain] = times_used + 1
-                probs, local_score = self.quality_model.score_pair_distrib(statement, snippet_str)
-                snippet_final = local_score * domain_factor
-                vericore_responses.append({
-                    "url": evid.url,
-                    "excerpt": evid.excerpt,
-                    "domain": domain,
-                    "snippet_found": True,
-                    "domain_factor": domain_factor,
-                    "contradiction": probs["contradiction"],
-                    "neutral": probs["neutral"],
-                    "entailment": probs["entailment"],
-                    "local_score": local_score,
-                    "snippet_score": snippet_final
-                })
-                sum_of_snippets += snippet_final
+            # # Calculate the miner's statement score
+            for statement_response in vericore_statement_responses:
+               if statement_response.snippet_found:
+                 times_used = domain_counts.get(statement_response.domain, 0)
+                 domain_factor = 1.0 / (2 ** times_used)
+                 statement_response.snippet_score = statement_response.local_score * domain_factor
+
+               sum_of_snippets += statement_response.snippet_score
+
+            bt.logging.info(f'Calculated Scores: {request_id}')
 
             speed_factor = max(0.0, 1.0 - (resp.elapse_time / 15.0))
             final_score = sum_of_snippets * speed_factor
@@ -276,32 +250,34 @@ class APIQueryHandler:
                 final_score -= 1.0
             final_score = max(-3.0, min(3.0, final_score))
             self._update_moving_score(miner_uid, final_score)
-            response_data.append({
-                "miner_hotkey": miner_hotkey,
-                "miner_uid": miner_uid,
-                "status": "ok",
-                "speed_factor": speed_factor,
-                "final_score": final_score,
-                "vericore_responses": vericore_responses
-            })
 
-        result = {
-            "status": "ok",
-            "request_id": request_id,
-            "statement": statement,
-            "sources": sources,
-            "results": response_data
-        }
+            miner_statement = VericoreMinerStatementResponse(
+              miner_hotkey = miner_hotkey,
+              miner_uid = miner_uid,
+              status = "ok",
+              speed_factor = speed_factor,
+              final_score = final_score,
+	            vericore_responses=vericore_statement_responses
+            )
+            response_data.append(miner_statement)
+
+        response = VericoreQueryResponse(
+          status = "ok",
+          request_id = request_id,
+          statement = statement,
+          sources = sources,
+          results = response_data
+        )
         bt.logging.info(f'************* writing files: {request_id}')
         # Write the result to a uniquely named file for the daemon.
-        self.write_result_file(request_id, result)
-        return result
+        self.write_result_file(request_id, response)
+        return response
 
-    def write_result_file(self, request_id: str, result: dict):
+    def write_result_file(self, request_id: str, result: VericoreQueryResponse):
         filename = os.path.join(self.results_dir, f"{request_id}.json")
         try:
             with open(filename, "w") as f:
-                json.dump(result, f)
+                json.dump(asdict(result), f)
             bt.logging.info(f"Wrote result file: {filename}")
         except Exception as e:
             bt.logging.error(f"Error writing result file {filename}: {e}")
@@ -384,7 +360,7 @@ async def veridex_query(request: Request):
     request_id = f"req-{random.getrandbits(32):08x}"
     handler = app.state.handler
     result = await handler.handle_veridex_query(request_id, statement, sources)
-    return JSONResponse(result)
+    return JSONResponse(asdict(result))
 
 if __name__ == "__main__":
     import uvicorn
