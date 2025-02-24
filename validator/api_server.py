@@ -252,7 +252,7 @@ class APIQueryHandler:
           sources = sources,
           results = response_data
         )
-        bt.logging.info(f'************* writing files: {request_id}')
+        bt.logging.info(f'Writing files: {request_id}')
         # Write the result to a uniquely named file for the daemon.
         self.write_result_file(request_id, response)
         return response
