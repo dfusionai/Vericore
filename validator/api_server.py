@@ -19,9 +19,12 @@ print('before veridex_protocol')
 from veridex_protocol import VeridexSynapse, SourceEvidence, VeridexResponse, VericoreStatementResponse,  VericoreMinerStatementResponse, VericoreQueryResponse
 
 from validator.quality_model import VeridexQualityModel
+from validator.verify_context_quality_model import VerifyContextQualityModel
 from validator.active_tester import StatementGenerator
 from validator.snippet_fetcher import SnippetFetcher
 
+from fuzzywuzzy import fuzz
+import lxml.html
 
 from dataclasses import asdict
 
@@ -43,6 +46,7 @@ class APIQueryHandler:
         # Local moving scores (for tracking locally; the daemon aggregates independently)
         self.moving_scores = [1.0] * len(self.metagraph.S)
         self.quality_model = VeridexQualityModel()
+        self.verify_quality_model =  VerifyContextQualityModel()
         self.statement_generator = StatementGenerator()
         self.fetcher = SnippetFetcher()
         # Directory to write individual result files (shared with the daemon)
@@ -289,12 +293,36 @@ class APIQueryHandler:
             return parts[0].lower()
         return url.lower()
 
+    # def _verify_snippet_in_rendered_page(self, url: str, snippet_text: str) -> bool:
+    #   try:
+    #       page_html = self.fetcher.fetch_entire_page(url)
+    #       return snippet_text in page_html
+    #   except Exception:
+    #       return False
+
     def _verify_snippet_in_rendered_page(self, url: str, snippet_text: str) -> bool:
-        try:
-            page_html = self.fetcher.fetch_entire_page(url)
-            return snippet_text in page_html
-        except Exception:
-            return False
+      try:
+        page_html = self.fetcher.fetch_entire_page(url)
+        tree = lxml.html.fromstring(page_html)
+
+        # Perform fuzzy matching
+        matches = [elem for elem in tree.xpath("//*[not(self::script or self::style)]") if fuzz.partial_ratio(snippet_text, elem.text_content().strip()) > 80]
+        if not matches:
+          return False
+
+        # Check whether the snippet does exist from the context
+        for match in matches:
+          context = match.text_content().strip()
+          if self.verify_quality_model.verify_context(snippet_text, context):
+            bt.logging.info("snippet has been FOUND within the page")
+            return True
+
+        bt.logging.info("snippet CANNOT be found within the page")
+        return False
+      except Exception:
+        bt.logging.error("Error verifying snippet")
+        # logging.error(f"Error verifying snippet in rendered page: {e}")
+        return False
 
 ###############################################################################
 # Set up FastAPI server
