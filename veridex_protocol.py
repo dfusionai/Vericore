@@ -11,7 +11,7 @@ class SourceEvidence(typing.NamedTuple):
     url: str
     excerpt: str = ""  # The snippet text the miner claims is from the URL
 
-class VeridexSynapse(bt.Synapse):
+class VericoreSynapse(bt.Synapse):
     """
     Veridex protocol:
     Inputs:
@@ -28,7 +28,7 @@ class VeridexSynapse(bt.Synapse):
 
 @dataclass
 class VeridexResponse:
-   synapse: VeridexSynapse
+   synapse: VericoreSynapse
    elapse_time: float
 
 @dataclass

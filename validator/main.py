@@ -17,7 +17,7 @@ from sanic.response import json
 from sanic_ext import Extend
 # Bittensor and Validator
 import bittensor as bt
-from veridex_protocol import VeridexSynapse, SourceEvidence
+from veridex_protocol import VericoreSynapse, SourceEvidence
 from validator.quality_model import VeridexQualityModel
 from validator.active_tester import StatementGenerator
 from validator.snippet_fetcher import SnippetFetcher
@@ -189,7 +189,7 @@ class VeridexValidator:
         3) Apply domain factor, speed factor, nonsense penalty, etc.
         """
         subset_axons = self._select_miner_subset(k=5)
-        synapse = VeridexSynapse(statement=statement, sources=sources)
+        synapse = VericoreSynapse(statement=statement, sources=sources)
 
         start_time = time.time()
         responses = self.dendrite.query(axons=subset_axons, synapse=synapse, timeout=12)
