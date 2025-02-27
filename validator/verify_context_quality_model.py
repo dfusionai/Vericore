@@ -29,11 +29,9 @@ class VerifyContextQualityModel:
 
         # Compute cosine similarity
         similarity_score = util.pytorch_cos_sim(snippet_embedding, context_embedding).item()
-
-        print('verify content similarity score:', similarity_score)
-
+        print(f"snippet_embedding {snippet_text}: {similarity_score}")
         # Define a threshold (adjust as needed)
-        return similarity_score > 0.95
+        return similarity_score >= 0.80
 
 # Used for testing purposes
 if __name__ == "__main__":

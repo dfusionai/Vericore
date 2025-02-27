@@ -22,7 +22,7 @@ from validator.quality_model import VeridexQualityModel
 from validator.verify_context_quality_model import VerifyContextQualityModel
 from validator.active_tester import StatementGenerator
 from validator.snippet_fetcher import SnippetFetcher
-
+from validator.domain_validator import domain_is_recently_registered
 from fuzzywuzzy import fuzz
 import lxml.html
 
@@ -111,14 +111,20 @@ class APIQueryHandler:
         return veridex_response
 
     async def process_veridex_response(self, request_id, evid, statement):
+      start_time = time.time()
+      print(f"Started processing {request_id} at {start_time}")
+
+      domain = self._extract_domain(evid.url)
+
       bt.logging.info(f"Processing Veridex response: {request_id}")
       snippet_str = evid.excerpt.strip()
+      # snippet was not processed - Score: -1
       if not snippet_str:
         snippet_score = -1.0
         veridex_miner_response = VericoreStatementResponse(
 	        url=evid.url,
           excerpt = evid.excerpt,
-          domain = self._extract_domain(evid.url),
+          domain = domain,
           snippet_found = False,
           local_score = 0.0,
           snippet_score = snippet_score
@@ -126,26 +132,42 @@ class APIQueryHandler:
         return veridex_miner_response
 
       bt.logging.info(f'Verifying Snippet: {request_id}')
+      # Verify that the snippet is actually within the provided url
+      # #todo - ask patrick - should we split score between url exists and whether the web-page does include the snippet
       snippet_found = self._verify_snippet_in_rendered_page(evid.url, snippet_str)
       bt.logging.info(f'Snippet Verified: {request_id} : {snippet_found}')
+
+      # Snippet was not found from the provided url
+      # #todo - ask patrick - should we penalise more for provided urls without the extracted snippet
       if not snippet_found:
         snippet_score = -1.0
         veridex_miner_response = VericoreStatementResponse(
   	      url=evid.url,
           excerpt = evid.excerpt,
-          domain = self._extract_domain(evid.url),
+          domain = domain,
           snippet_found = False,
           local_score = 0.0,
           snippet_score = snippet_score
         )
         return veridex_miner_response
 
-      domain = self._extract_domain(evid.url)
-      # times_used = domain_counts.get(domain, 0)
-      # domain_factor = 1.0 / (2 ** times_used)
-      # domain_counts[domain] = times_used + 1
+
+      # Dont score if domain was registered within 30 days.
+      domain_registered_recently = domain_is_recently_registered(domain)
+      bt.logging.info(f'Is domain registered recently: {domain_registered_recently}')
+      if domain_registered_recently:
+        snippet_score = -1.0
+        veridex_miner_response = VericoreStatementResponse(
+		      url=evid.url,
+		      excerpt=evid.excerpt,
+		      domain=domain,
+		      snippet_found=False,
+		      local_score=0.0,
+		      snippet_score=snippet_score
+	      )
+        return veridex_miner_response
+
       probs, local_score = self.quality_model.score_pair_distrib(statement, snippet_str)
-      # snippet_final = local_score * domain_factor
       veridex_miner_response = VericoreStatementResponse(
         url = evid.url,
         excerpt = evid.excerpt,
@@ -158,6 +180,8 @@ class APIQueryHandler:
         local_score = local_score,
         snippet_score = 0
       )
+      end_time = time.time()
+      print(f"Finished processing {request_id} at {end_time} (Duration: {end_time - start_time})")
       return veridex_miner_response
 
     async def handle_veridex_query(self, request_id: str, statement: str, sources: list,
@@ -310,14 +334,14 @@ class APIQueryHandler:
         if not matches:
           return False
 
-        # Check whether the snippet does exist from the context
+        # Check whether the snippet does exist within the provided context
         for match in matches:
           context = match.text_content().strip()
           if self.verify_quality_model.verify_context(snippet_text, context):
-            bt.logging.info("snippet has been FOUND within the page")
+            bt.logging.info(f"FOUND snippet  within the page. url: {url} snippet text: {snippet_text}")
             return True
 
-        bt.logging.info("snippet CANNOT be found within the page")
+        bt.logging.info(f"CANNOT FIND snippet within the page url.: {url} snippet text: {snippet_text}")
         return False
       except Exception:
         bt.logging.error("Error verifying snippet")
@@ -371,7 +395,10 @@ async def veridex_query(request: Request):
         raise HTTPException(status_code=400, detail="Missing 'statement'")
     request_id = f"req-{random.getrandbits(32):08x}"
     handler = app.state.handler
+    start_time = time.time()
     result = await handler.handle_veridex_query(request_id, statement, sources)
+    end_time = time.time()
+    print(f"Finished processing {request_id} at {end_time} (Duration: {end_time - start_time})")
     return JSONResponse(asdict(result))
 
 if __name__ == "__main__":
