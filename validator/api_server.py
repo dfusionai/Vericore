@@ -100,9 +100,9 @@ class APIQueryHandler:
 
     async def call_axon(self, request_id, target_axon, synapse):
         start_time = time.time()
-        bt.logging.info(f"Calling axon {target_axon} for request id: {request_id}")
+        bt.logging.info(f"{request_id} | Calling axon {target_axon.hotkey}")
         response =  await self.dendrite.call(target_axon=target_axon, synapse=synapse, timeout=120, deserialize=True)
-        bt.logging.info(f"Calling axon {target_axon} for request id Completed: {request_id}")
+        bt.logging.info(f"{request_id} | Called axon {target_axon.hotkey}")
         end_time = time.time()
         elapsed = end_time - start_time + 1e-9
         veridex_response = VeridexResponse
@@ -110,13 +110,13 @@ class APIQueryHandler:
         veridex_response.elapse_time = elapsed
         return veridex_response
 
-    async def process_veridex_response(self, request_id, evid, statement):
+    def process_miner_response(self, request_id, evid, statement):
       start_time = time.time()
-      print(f"Started processing {request_id} at {start_time}")
+      print(f"{request_id} | Started miner response at {start_time}")
 
       domain = self._extract_domain(evid.url)
 
-      bt.logging.info(f"Processing Veridex response: {request_id}")
+      bt.logging.info(f"{request_id} | Verifying miner statement ")
       snippet_str = evid.excerpt.strip()
       # snippet was not processed - Score: -1
       if not snippet_str:
@@ -131,11 +131,11 @@ class APIQueryHandler:
         )
         return veridex_miner_response
 
-      bt.logging.info(f'Verifying Snippet: {request_id}')
+      bt.logging.info(f'{request_id} | Verifying Snippet')
       # Verify that the snippet is actually within the provided url
       # #todo - ask patrick - should we split score between url exists and whether the web-page does include the snippet
-      snippet_found = self._verify_snippet_in_rendered_page(evid.url, snippet_str)
-      bt.logging.info(f'Snippet Verified: {request_id} : {snippet_found}')
+      snippet_found = self._verify_snippet_in_rendered_page(request_id, evid.url, snippet_str)
+      bt.logging.info(f'{request_id} | Snippet Verified:  {snippet_found}')
 
       # Snippet was not found from the provided url
       # #todo - ask patrick - should we penalise more for provided urls without the extracted snippet
@@ -154,7 +154,7 @@ class APIQueryHandler:
 
       # Dont score if domain was registered within 30 days.
       domain_registered_recently = domain_is_recently_registered(domain)
-      bt.logging.info(f'Is domain registered recently: {domain_registered_recently}')
+      bt.logging.info(f'{request_id} | Is domain registered recently: {domain_registered_recently}')
       if domain_registered_recently:
         snippet_score = -1.0
         veridex_miner_response = VericoreStatementResponse(
@@ -181,7 +181,7 @@ class APIQueryHandler:
         snippet_score = 0
       )
       end_time = time.time()
-      print(f"Finished processing {request_id} at {end_time} (Duration: {end_time - start_time})")
+      print(f"{request_id} | Finished miner snippet at {end_time} (Duration: {end_time - start_time})")
       return veridex_miner_response
 
     async def process_miner_request(
@@ -203,7 +203,7 @@ class APIQueryHandler:
        # Call the miner
        miner_response = await self.call_axon(target_axon=axon, request_id=request_id, synapse=synapse)
 
-       bt.logging.info(f'{request_id} | { miner_uid } | Received miner information: {miner_response}')
+       bt.logging.info(f'{request_id} | { miner_uid } | Received miner information')
        if miner_uid is None:
          miner_statement = VericoreMinerStatementResponse(
 		       miner_hotkey='',
@@ -227,12 +227,19 @@ class APIQueryHandler:
        # Process Vericore response data
        bt.logging.info(f'{request_id} | {miner_uid} | Verifying Miner Statements')
 
+       # vericore_statement_responses = await asyncio.gather(*[
+	     #   asyncio.
+	     #    self.process_miner_response(
+		   #      request_id=request_id,
+		   #      evid=miner_response,
+		   #      statement=statement
+	     #    ) for miner_response in miner_response.synapse.veridex_response
+       # ])
+
        vericore_statement_responses = await asyncio.gather(*[
-	        self.process_veridex_response(
-		        request_id=request_id,
-		        evid=miner_response,
-		        statement=statement
-	        ) for miner_response in miner_response.synapse.veridex_response
+	       asyncio.to_thread(
+		       self.process_miner_response, request_id, miner_veridex_response, statement
+	       ) for miner_veridex_response in miner_response.synapse.veridex_response
        ])
 
        bt.logging.info(f'{request_id} | {miner_uid} | Scoring Miner Statements')
@@ -385,7 +392,6 @@ class APIQueryHandler:
           sources = sources,
           results = responses
         )
-        bt.logging.info(f'Writing files: {request_id}')
         # Write the result to a uniquely named file for the daemon.
         self.write_result_file(request_id, response)
         return response
@@ -429,9 +435,12 @@ class APIQueryHandler:
     #   except Exception:
     #       return False
 
-    def _verify_snippet_in_rendered_page(self, url: str, snippet_text: str) -> bool:
+    def _verify_snippet_in_rendered_page(self, request_id: str, url: str, snippet_text: str) -> bool:
       try:
-        page_html = self.fetcher.fetch_entire_page(url)
+        fetcher = SnippetFetcher()
+        # page_html = self.fetcher.fetch_entire_page(url)
+        page_html = fetcher.fetch_entire_page(url)
+
         tree = lxml.html.fromstring(page_html)
 
         # Perform fuzzy matching
@@ -443,10 +452,10 @@ class APIQueryHandler:
         for match in matches:
           context = match.text_content().strip()
           if self.verify_quality_model.verify_context(snippet_text, context):
-            bt.logging.info(f"FOUND snippet  within the page. url: {url} snippet text: {snippet_text}")
+            bt.logging.info(f"{request_id} | FOUND snippet  within the page. url: {url} ")
             return True
 
-        bt.logging.info(f"CANNOT FIND snippet within the page url.: {url} snippet text: {snippet_text}")
+        bt.logging.info(f"{request_id} | CANNOT FIND snippet within the page url.: {url} ")
         return False
       except Exception:
         bt.logging.error("Error verifying snippet")

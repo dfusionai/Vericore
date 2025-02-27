@@ -6,6 +6,8 @@ import traceback
 import numpy as np
 import bittensor as bt
 
+bt.logging.set_trace()
+
 def get_config():
     parser = argparse.ArgumentParser()
     parser.add_argument("--custom", default="my_custom_value", help="Custom value")
@@ -59,6 +61,7 @@ def aggregate_results(results_dir, moving_scores):
                 miner_uid = res.get("miner_uid")
                 final_score = res.get("final_score")
                 if miner_uid is not None and final_score is not None:
+                    bt.logging.info(f"Moving score for uid: {miner_uid} and final score: {final_score}")
                     moving_scores[miner_uid] = 0.8 * moving_scores[miner_uid] + 0.2 * final_score
         except Exception as e:
             bt.logging.error(f"Error processing file {filepath}: {e}")
