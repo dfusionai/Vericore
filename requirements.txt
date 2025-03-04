@@ -10,3 +10,4 @@ selenium
 fuzzywuzzy
 sentence-transformers
 python-whois
+beautifulsoup4

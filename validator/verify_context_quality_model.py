@@ -1,4 +1,5 @@
 import sys
+import bittensor as bt
 
 from sentence_transformers import SentenceTransformer, util
 
@@ -22,21 +23,34 @@ class VerifyContextQualityModel:
     def __init__(self):
         self.model = SentenceTransformer("all-MiniLM-L6-v2")  # Lightweight transformer
 
-    def verify_context(self, snippet_text: str, context_text: str) -> bool:
+    def chunk_text(self, text, window_size=3, step=1):
+      """Split text into overlapping chunks of 'window_size' sentences."""
+      sentences = text.split(". ")  # Basic sentence splitting (may need better handling)
+      chunks = [" ".join(sentences[i: i + window_size]) for i in range(0, len(sentences), step)]
+      return chunks
+
+    def verify_context(self, snippet_text: str, context_text: str) :
+        threshold = 0.75
         # Encode both texts
         snippet_embedding = self.model.encode(snippet_text, convert_to_tensor=True)
-        context_embedding = self.model.encode(context_text, convert_to_tensor=True)
 
-        # Compute cosine similarity
-        similarity_score = util.pytorch_cos_sim(snippet_embedding, context_embedding).item()
-        print(f"snippet_embedding {snippet_text}: {similarity_score}")
-        # Define a threshold (adjust as needed)
-        return similarity_score >= 0.80
+        chunks = self.chunk_text(context_text, window_size=3)
+
+        # context_embedding = self.model.encode(context_text, convert_to_tensor=True)
+
+        # Compare snippet against each chunk
+        best_score = 0
+        for chunk in chunks:
+           chunk_embedding = self.model.encode(chunk, convert_to_tensor=True)
+           similarity = util.pytorch_cos_sim(snippet_embedding, chunk_embedding).item()
+           best_score = max(best_score, similarity)  # Keep highest similarity
+
+        return best_score, best_score > threshold  # Return best match score and decision
 
 # Used for testing purposes
 if __name__ == "__main__":
     if len(sys.argv) < 3:
-      print("Usage: python similarity_check.py '<snippet>' '<context>'")
+      bt.logging.info("Usage: python similarity_check.py '<snippet>' '<context>'")
       sys.exit(1)
 
     snippet = sys.argv[1]
@@ -44,4 +58,4 @@ if __name__ == "__main__":
     model = VerifyContextQualityModel()
     score = model.verify_context(snippet, context)
 
-    print("Match:", score > 0.95)
+    bt.logging.info("Match:", score )
