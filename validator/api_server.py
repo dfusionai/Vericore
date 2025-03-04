@@ -130,9 +130,14 @@ class APIQueryHandler:
         return veridex_miner_response
 
       bt.logging.info(f'{request_id} | Verifying Snippet')
+
+      # Fetch page text
+      page_text = self._fetch_page_text(evid.url)
+
       # Verify that the snippet is actually within the provided url
       # #todo - ask patrick - should we split score between url exists and whether the web-page does include the snippet
-      snippet_found = self._verify_snippet_in_rendered_page(request_id, evid.url, snippet_str)
+      snippet_found = self._verify_snippet_in_rendered_page(request_id, page_text, snippet_str)
+
       bt.logging.info(f'{request_id} | Url: {evid.url} | Snippet: {snippet_str} | Snippet Verified  {snippet_found}')
 
       # Snippet was not found from the provided url
@@ -346,23 +351,25 @@ class APIQueryHandler:
     #   except Exception:
     #       return False
 
-    def _verify_snippet_in_rendered_page(self, request_id: str, url: str, snippet_text: str) -> bool:
+    def _fetch_page_text(self, url: str) -> str:
       try:
         fetcher = SnippetFetcher()
-        # page_html = self.fetcher.fetch_entire_page(url)
         page_html = fetcher.fetch_entire_page(url)
-
-        # bt.logging.info(f"{request_id} | {url} | page_html: {page_html} ")
 
         soup = BeautifulSoup(page_html, 'html.parser')
 
         page_text = soup.getText(separator=" ", strip=True)
 
-        # bt.logging.info(f"page_text: {page_text}")
-        if self.verify_quality_model.verify_context(snippet_text, page_text):
-          return True
+        return page_text
 
-        return False
+      except Exception:
+        bt.logging.error("Fetch Page Text")
+        # logging.error(f"Error verifying snippet in rendered page: {e}")
+        return ''
+
+    def _verify_snippet_in_rendered_page(self, request_id: str, page_text: str, snippet_text: str) -> bool:
+      try:
+        return self.verify_quality_model.verify_context(snippet_text, page_text)
 
         # tree = lxml.html.fromstring(page_html)
 				#
