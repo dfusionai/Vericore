@@ -1,4 +1,4 @@
-git+https://github.com/opentensor/bittensor.git@v9.0.0rc1#egg=bittensor
+git+https://github.com/opentensor/bittensor.git@v9.0.0
 sanic
 webdriver_manager
 lxml
