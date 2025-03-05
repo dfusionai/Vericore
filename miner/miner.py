@@ -6,10 +6,13 @@ import bittensor as bt
 import json
 from typing import Tuple, List
 
-from veridex_protocol import VeridexSynapse, SourceEvidence
+from veridex_protocol import VericoreSynapse, SourceEvidence
 
 # "openai" client from perplexity
 from openai import OpenAI
+
+# debug
+bt.logging.set_trace()
 
 class Miner:
     def __init__(self):
@@ -76,19 +79,22 @@ class Miner:
             self.my_subnet_uid = self.metagraph.hotkeys.index(self.wallet.hotkey.ss58_address)
             bt.logging.info(f"Miner on uid: {self.my_subnet_uid}")
 
-    def blacklist_fn(self, synapse: VeridexSynapse) -> Tuple[bool, str]:
+    def blacklist_fn(self, synapse: VericoreSynapse) -> Tuple[bool, str]:
         if synapse.dendrite.hotkey not in self.metagraph.hotkeys:
             bt.logging.trace(f"Blacklisting unrecognized hotkey {synapse.dendrite.hotkey}")
             return True, None
         bt.logging.trace(f"Not blacklisting recognized hotkey {synapse.dendrite.hotkey}")
         return False, None
 
-    def veridex_forward(self, synapse: VeridexSynapse) -> VeridexSynapse:
+    def veridex_forward(self, synapse: VericoreSynapse) -> VericoreSynapse:
         """
         Calls Perplexity. Returns a list of (url, snippet) with no XPATH offsets.
         """
+        bt.logging.info(f"veridex_forward {synapse.request_id}")
         statement = synapse.statement
+        bt.logging.info(f"calling perplexity {synapse.request_id}")
         results = self.call_perplexity_ai(statement)
+        bt.logging.info(f"received perplexity response {synapse.request_id}")
         if not results:
             synapse.veridex_response = []
             return synapse
@@ -121,7 +127,7 @@ Rules:
 Steps:
 1. Find sources / text segments that either contradict or agree with the user provided statement.
 2. Pick and extract the segments that most strongly agree or contradict the statement.
-3. Do not return urls or segments that do not directly support or disagree with the statement. 
+3. Do not return urls or segments that do not directly support or disagree with the statement.
 4. Do not change any text in the segments (must return an exact html text match), but do shorten the segment to get only the part that directly agrees or disagrees with the statement.
 5. Create the json object for each source and statement and collect them into a list.
 """
