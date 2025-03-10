@@ -4,6 +4,7 @@ import random
 import argparse
 import asyncio
 import json
+import logging
 from typing import List
 
 from fastapi import FastAPI, Request, HTTPException
@@ -12,8 +13,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 import bittensor as bt
 
-from veridex_protocol import VericoreSynapse, SourceEvidence, VeridexResponse, VericoreStatementResponse,  VericoreMinerStatementResponse, VericoreQueryResponse
-
+from shared.veridex_protocol import VericoreSynapse, SourceEvidence, VeridexResponse, VericoreStatementResponse,  VericoreMinerStatementResponse, VericoreQueryResponse
+from shared.log_data import LoggerType
+from shared.proxy_log_handler import registerProxyLogHander
 from validator.quality_model import VeridexQualityModel
 from validator.verify_context_quality_model import VerifyContextQualityModel
 from validator.active_tester import StatementGenerator
@@ -77,6 +79,10 @@ class APIQueryHandler:
         bt.logging.info("Starting APIQueryHandler with config:")
         bt.logging.info(self.config)
 
+        bt_logger = logging.getLogger("bittensor")
+        proxy_url = "htpp"
+        registerProxyLogHander(bt_logger, proxy_url, LoggerType.Validator, "ref")
+
     def setup_bittensor_objects(self):
         bt.logging.info("Setting up Bittensor objects for API Server.")
         self.wallet = bt.wallet(config=self.config)
@@ -94,7 +100,6 @@ class APIQueryHandler:
         else:
             self.my_subnet_uid = self.metagraph.hotkeys.index(self.wallet.hotkey.ss58_address)
             bt.logging.info(f"API Server running on uid: {self.my_subnet_uid}")
-
 
     async def call_axon(self, request_id, target_axon, synapse):
         start_time = time.time()
