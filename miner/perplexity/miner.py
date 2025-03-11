@@ -5,9 +5,10 @@ import traceback
 import bittensor as bt
 import json
 from typing import Tuple, List
+import logging
 
-from openai.types import ResponseFormatJSONObject
-
+from shared.log_data import LoggerType
+from shared.proxy_log_handler import registerProxyLogHandler
 from shared.veridex_protocol import VericoreSynapse, SourceEvidence
 
 # "openai" client from perplexity
@@ -16,23 +17,20 @@ from openai import OpenAI
 # debug
 bt.logging.set_trace()
 
+LOGGER_API_URL = 'http://localhost:8086' # TO BE UPDATED
+ENABLE_PROXY_LOGGING = True # TO BE UPDATED
+
 class Miner:
     def __init__(self):
         self.config = self.get_config()
         self.setup_logging()
         self.setup_bittensor_objects()
 
-        # Load Perplexity AI key
-        # Load Perplexity AI key
-        # self.perplexity_api_key = os.environ.get("PERPLEXITY_API_KEY", "YOUR_API_KEY_HERE")
-        # if not self.perplexity_api_key or self.perplexity_api_key.startswith("YOUR_API_KEY_HERE"):
-        #     bt.logging.warning("No PERPLEXITY_API_KEY found. Please set it to use Perplexity.")
-
-        self.perplexity_api_key = "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"
-        self.perplexity_client = OpenAI(
-            api_key=self.perplexity_api_key,
-            base_url="https://api.perplexity.ai"
-        )
+        Load Perplexity AI key
+        Load Perplexity AI key
+        self.perplexity_api_key = os.environ.get("PERPLEXITY_API_KEY", "YOUR_API_KEY_HERE")
+        if not self.perplexity_api_key or self.perplexity_api_key.startswith("YOUR_API_KEY_HERE"):
+            bt.logging.warning("No PERPLEXITY_API_KEY found. Please set it to use Perplexity.")
 
     def get_config(self):
         parser = argparse.ArgumentParser()
@@ -62,6 +60,17 @@ class Miner:
             f"Running miner for subnet: {self.config.netuid} on network: {self.config.subtensor.network} with config:"
         )
         bt.logging.info(self.config)
+
+    def setup_proxy_logger(self):
+        if ENABLE_PROXY_LOGGING:
+            bt_logger = logging.getLogger("bittensor")
+            proxy_url = LOGGER_API_URL
+            neuron_info = self.subtensor.get_neuron_for_pubkey_and_subnet(
+                self.wallet.hotkey.ss58_address,
+                self.config.netuid
+            )
+            bt.logging.info(f"Registering Proxy Log Handler {neuron_info.uid}")
+            registerProxyLogHandler(bt_logger, proxy_url, LoggerType.Miner, str(neuron_info.uid))
 
     def setup_bittensor_objects(self):
         bt.logging.info("Setting up Bittensor objects.")
@@ -172,7 +181,7 @@ Response MUST returned as a json object. If it isn't returned as json object the
 
     def setup_axon(self):
         self.axon = bt.axon(wallet=self.wallet, config=self.config)
-        bt.logging.info("Attaching forward function to axon.")
+        bt.logging.info(f"Attaching forward function to axon" )
         self.axon.attach(
             forward_fn=self.veridex_forward,
             blacklist_fn=self.blacklist_fn,
@@ -185,7 +194,13 @@ Response MUST returned as a json object. If it isn't returned as json object the
         self.axon.start()
 
     def run(self):
+        bt.logging.info("Setting up axon")
         self.setup_axon()
+
+        bt.logging.info("Setting up proxy logger")
+
+        self.setup_proxy_logger()
+
         bt.logging.info("Starting main loop")
         step = 0
         while True:

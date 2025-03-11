@@ -3,7 +3,7 @@ import logging
 import requests
 from dataclasses import asdict
 
-def registerProxyLogHander(logger, proxy_url, logger_type: LoggerType, logger_reference: str):
+def registerProxyLogHandler(logger, proxy_url, logger_type: LoggerType, logger_reference: str):
     # Use the actual Bittensor logger
     logger.setLevel(logging.DEBUG)  # Capture all logs
 

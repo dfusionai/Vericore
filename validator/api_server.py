@@ -15,7 +15,7 @@ import bittensor as bt
 
 from shared.veridex_protocol import VericoreSynapse, SourceEvidence, VeridexResponse, VericoreStatementResponse,  VericoreMinerStatementResponse, VericoreQueryResponse
 from shared.log_data import LoggerType
-from shared.proxy_log_handler import registerProxyLogHander
+from shared.proxy_log_handler import registerProxyLogHandler
 from validator.quality_model import VeridexQualityModel
 from validator.verify_context_quality_model import VerifyContextQualityModel
 from validator.active_tester import StatementGenerator
@@ -81,11 +81,10 @@ class APIQueryHandler:
         bt.logging.info("Starting APIQueryHandler with config:")
         bt.logging.info(self.config)
 
-        bt_logger = logging.getLogger("bittensor")
-
         if ENABLE_PROXY_LOGGING:
+            bt_logger = logging.getLogger("bittensor")
             proxy_url = LOGGER_API_URL
-            registerProxyLogHander(bt_logger, proxy_url, LoggerType.Validator, "ref")
+            registerProxyLogHandler(bt_logger, proxy_url, LoggerType.Validator, "ref")
 
     def setup_bittensor_objects(self):
         bt.logging.info("Setting up Bittensor objects for API Server.")
