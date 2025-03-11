@@ -6,7 +6,7 @@ import bittensor as bt
 import json
 from typing import Tuple, List
 
-from veridex_protocol import VericoreSynapse, SourceEvidence
+from shared.veridex_protocol import VericoreSynapse, SourceEvidence
 
 # "openai" client from perplexity
 from openai import OpenAI
@@ -90,11 +90,11 @@ class Miner:
         """
         Calls Perplexity. Returns a list of (url, snippet) with no XPATH offsets.
         """
-        bt.logging.info(f"veridex_forward {synapse.request_id}")
+        bt.logging.info(f"{synapse.request_id} | Received Veridex request ")
         statement = synapse.statement
-        bt.logging.info(f"calling perplexity {synapse.request_id}")
+        bt.logging.info(f"{synapse.request_id} | Calling perplexity ")
         results = self.call_perplexity_ai(statement)
-        bt.logging.info(f"received perplexity response {synapse.request_id}")
+        bt.logging.info(f"{synapse.request_id} | Received response from perplexity ")
         if not results:
             synapse.veridex_response = []
             return synapse
@@ -109,7 +109,7 @@ class Miner:
                 final_evidence.append(ev)
 
         synapse.veridex_response = final_evidence
-        bt.logging.info(f"Miner returns {len(final_evidence)} evidence items for statement: '{statement}'.")
+        bt.logging.info(f"{synapse.request_id} | Miner returns {len(final_evidence)} evidence items for statement: '{statement}'.")
         return synapse
 
     def call_perplexity_ai(self, statement: str) -> List[dict]:
@@ -118,7 +118,7 @@ class Miner:
         2) Parse JSON from the response -> [ {url, snippet}, ... ].
         """
         system_content = """
-You are a helpful AI assistant that fact checks statements.
+You are an API that fact checks statements.
 
 Rules:
 1. Return the response **only as a JSON array**.

@@ -31,6 +31,8 @@ from bs4 import BeautifulSoup
 # debug
 bt.logging.set_trace()
 
+LOGGER_API_URL = 'http://localhost:8086' # TO BE UPDATED
+ENABLE_PROXY_LOGGING = True # TO BE UPDATED
 
 ###############################################################################
 # APIQueryHandler: handles miner queries, scores responses, and writes each
@@ -80,8 +82,10 @@ class APIQueryHandler:
         bt.logging.info(self.config)
 
         bt_logger = logging.getLogger("bittensor")
-        proxy_url = "htpp"
-        registerProxyLogHander(bt_logger, proxy_url, LoggerType.Validator, "ref")
+
+        if ENABLE_PROXY_LOGGING:
+            proxy_url = LOGGER_API_URL
+            registerProxyLogHander(bt_logger, proxy_url, LoggerType.Validator, "ref")
 
     def setup_bittensor_objects(self):
         bt.logging.info("Setting up Bittensor objects for API Server.")
