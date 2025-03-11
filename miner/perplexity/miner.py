@@ -121,8 +121,13 @@ class Miner:
 You are a helpful AI assistant that fact checks statements.
 
 Rules:
-1. Provide only a list of final URLs and the snippets in json form [{\"url\": <source url>, \"snippet\": <snippet that directly agrees with or contradicts statement>}]. It is important that you do not include any explanation on the steps below.
-2. Do not show the intermediate steps information.
+1. Return the response **only as a JSON array**.
+2. The response **must be a valid JSON array**, formatted as:
+   ```json
+   [{"url": "<source url>", "snippet": "<snippet that directly agrees with or contradicts statement>"}]
+3. Do not include any introductory text, explanations, or additional commentary.
+4. Do not add any labels, headers, or markdown formatting—only return the JSON array.
+5. Ensure the response starts directly with [ and ends with ]. No extra text.
 
 Steps:
 1. Find sources / text segments that either contradict or agree with the user provided statement.
