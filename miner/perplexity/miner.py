@@ -6,6 +6,8 @@ import bittensor as bt
 import json
 from typing import Tuple, List
 
+from openai.types import ResponseFormatJSONObject
+
 from shared.veridex_protocol import VericoreSynapse, SourceEvidence
 
 # "openai" client from perplexity
@@ -21,10 +23,12 @@ class Miner:
         self.setup_bittensor_objects()
 
         # Load Perplexity AI key
-        self.perplexity_api_key = os.environ.get("PERPLEXITY_API_KEY", "YOUR_API_KEY_HERE")
-        if not self.perplexity_api_key or self.perplexity_api_key.startswith("YOUR_API_KEY_HERE"):
-            bt.logging.warning("No PERPLEXITY_API_KEY found. Please set it to use Perplexity.")
+        # Load Perplexity AI key
+        # self.perplexity_api_key = os.environ.get("PERPLEXITY_API_KEY", "YOUR_API_KEY_HERE")
+        # if not self.perplexity_api_key or self.perplexity_api_key.startswith("YOUR_API_KEY_HERE"):
+        #     bt.logging.warning("No PERPLEXITY_API_KEY found. Please set it to use Perplexity.")
 
+        self.perplexity_api_key = "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"
         self.perplexity_client = OpenAI(
             api_key=self.perplexity_api_key,
             base_url="https://api.perplexity.ai"
@@ -127,7 +131,6 @@ Rules:
    [{"url": "<source url>", "snippet": "<snippet that directly agrees with or contradicts statement>"}]
 3. Do not include any introductory text, explanations, or additional commentary.
 4. Do not add any labels, headers, or markdown formatting—only return the JSON array.
-5. Ensure the response starts directly with [ and ends with ]. No extra text.
 
 Steps:
 1. Find sources / text segments that either contradict or agree with the user provided statement.
@@ -135,6 +138,8 @@ Steps:
 3. Do not return urls or segments that do not directly support or disagree with the statement.
 4. Do not change any text in the segments (must return an exact html text match), but do shorten the segment to get only the part that directly agrees or disagrees with the statement.
 5. Create the json object for each source and statement and collect them into a list.
+
+Response MUST returned as a json object. If it isn't returned as json object the response MUST BE EMPTY.
 """
         user_content = f"Return snippets that strongly agree with or reject the following statement:\n{statement}"
 
@@ -153,6 +158,9 @@ Steps:
                 bt.logging.warn(f"Perplexity returned no choices: {response}")
                 return []
             raw_text = response.choices[0].message.content.strip()
+
+            bt.logging.warn(f"Returned : {raw_text}")
+
             data = json.loads(raw_text)
             if not isinstance(data, list):
                 bt.logging.warn(f"Perplexity response is not a list: {data}")
