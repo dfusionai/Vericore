@@ -5,7 +5,9 @@ import os
 import bittensor as bt
 
 def register_proxy_log_handler(logger, logger_type: LoggerType, wallet):
-    enable_logging = os.environ.get("ENABLE_PROXY_LOGGING", False)
+    enable_logging = os.environ.get("ENABLE_PROXY_LOGGING", "false").lower() == "true"
+
+    bt.logging.info(f"Logging enabled:  {enable_logging}")
 
     if not enable_logging:
         return
