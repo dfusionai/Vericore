@@ -6,6 +6,7 @@ from contextlib import asynccontextmanager
 import json
 import boto3
 
+import bittensor as bt
 from shared.log_data import LogEntry, LoggerType
 
 ###############################################################################
@@ -103,6 +104,29 @@ async def startup_event():
     app.state.handler = LogHandler()
     print("LogHandler instance created at startup.")
 
+def verify_request(request: Request, log_entry: LogEntry):
+    if not request.headers.get("wallet"):
+        raise HTTPException(status_code=401, detail="Invalid wallet")
+
+    if not request.headers.get("signature"):
+        raise HTTPException(status_code=401, detail="Invalid signature")
+
+    wallet_hotkey = request.headers.get("wallet")
+    signature = request.headers.get("signature")
+
+    # create message
+    message = f"{log_entry.level}.{log_entry.timestamp}.{wallet_hotkey}.log"
+    message_bytes = message.encode("utf-8")
+    signature_bytes =  bytes.fromhex(signature)
+
+    hotkey = bt.Keypair(ss58_address=wallet_hotkey)
+    verified = hotkey.verify(message_bytes, signature_bytes)
+
+    print(f"Verified: {verified}")
+
+    if not verified:
+        raise HTTPException(status_code=401, detail="Unauthorized signature")
+
 @app.post("/log")
 async def log(request: Request):
     try:
@@ -110,20 +134,13 @@ async def log(request: Request):
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid JSON payload")
 
-    logger_reference: str = request.headers.get("logger-reference")
-    if request.headers.get("logger-type"):
-      logger_type: LoggerType = LoggerType(request.headers.get("logger-type"))
-
-    # if logger type is Miner
-    # - Fetch axons and validate to see whether its registered
-
     json_data = json.loads(data)
 
     log_entry = LogEntry(**json_data)
     if not log_entry:
         raise HTTPException(status_code=400, detail="Invalid Log Entry")
 
-    print(f"log: {log_entry}")
+    verify_request(request, log_entry)
 
     handler = app.state.handler
     handler.logEvent(log_entry)

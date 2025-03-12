@@ -42,8 +42,9 @@ class APIQueryHandler:
     def __init__(self):
         self.config = self.get_config()
         bt.logging.info(f"__init {self.config}")
-        self.setup_logging()
         self.setup_bittensor_objects()  # Creates dendrite, wallet, subtensor, metagraph only once.
+        self.setup_logging()
+
         self.my_uid = self.metagraph.hotkeys.index(self.wallet.hotkey.ss58_address)
         # Local moving scores (for tracking locally; the daemon aggregates independently)
         self.moving_scores = [1.0] * len(self.metagraph.S)
@@ -80,11 +81,10 @@ class APIQueryHandler:
         bt.logging(config=self.config, logging_dir=self.config.full_path)
         bt.logging.info("Starting APIQueryHandler with config:")
         bt.logging.info(self.config)
-
         if ENABLE_PROXY_LOGGING:
             bt_logger = logging.getLogger("bittensor")
             proxy_url = LOGGER_API_URL
-            registerProxyLogHandler(bt_logger, proxy_url, LoggerType.Validator, "ref")
+            registerProxyLogHandler(bt_logger, proxy_url, LoggerType.Validator, self.wallet)
 
     def setup_bittensor_objects(self):
         bt.logging.info("Setting up Bittensor objects for API Server.")

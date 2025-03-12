@@ -23,6 +23,7 @@ ENABLE_PROXY_LOGGING = True # TO BE UPDATED
 class Miner:
     def __init__(self):
         self.config = self.get_config()
+        self.setup_bittensor_objects()
         self.setup_logging()
         self.setup_bittensor_objects()
 
@@ -65,12 +66,7 @@ class Miner:
         if ENABLE_PROXY_LOGGING:
             bt_logger = logging.getLogger("bittensor")
             proxy_url = LOGGER_API_URL
-            neuron_info = self.subtensor.get_neuron_for_pubkey_and_subnet(
-                self.wallet.hotkey.ss58_address,
-                self.config.netuid
-            )
-            bt.logging.info(f"Registering Proxy Log Handler {neuron_info.uid}")
-            registerProxyLogHandler(bt_logger, proxy_url, LoggerType.Miner, str(neuron_info.uid))
+            registerProxyLogHandler(bt_logger, proxy_url, LoggerType.Miner, self.wallet)
 
     def setup_bittensor_objects(self):
         bt.logging.info("Setting up Bittensor objects.")
@@ -146,9 +142,9 @@ Steps:
 2. Pick and extract the segments that most strongly agree or contradict the statement.
 3. Do not return urls or segments that do not directly support or disagree with the statement.
 4. Do not change any text in the segments (must return an exact html text match), but do shorten the segment to get only the part that directly agrees or disagrees with the statement.
-5. Create the json object for each source and statement and collect them into a list.
+5. Create the json object for each source and statement and add them only INTO ONE array
 
-Response MUST returned as a json object. If it isn't returned as json object the response MUST BE EMPTY.
+Response MUST returned as a json array. If it isn't returned as json object the response MUST BE EMPTY.
 """
         user_content = f"Return snippets that strongly agree with or reject the following statement:\n{statement}"
 
