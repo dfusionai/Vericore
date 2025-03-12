@@ -1,11 +1,21 @@
 from shared.log_data import LoggerType, JSONFormatter
 import logging
 import requests
+import os
+import bittensor as bt
 
-def registerProxyLogHandler(logger, proxy_url, logger_type: LoggerType, wallet ):
+def register_proxy_log_handler(logger, logger_type: LoggerType, wallet):
+    enable_logging = os.environ.get("ENABLE_PROXY_LOGGING", False)
+
+    if not enable_logging:
+        return
+
+    proxy_url = os.environ.get("LOGGER_API_URL", 'http://localhost:8086')
+
+    bt.logging.info(f"Registered proxy logging on url:  {proxy_url}")
+
     # Use the actual Bittensor logger
     logger.setLevel(logging.DEBUG)  # Capture all logs
-
     proxy_handler = ProxyLogHandler(proxy_url, logger_type, wallet)
     proxy_handler.setLevel(logging.DEBUG)  # Only send warnings and above
     proxy_handler.setFormatter(JSONFormatter())

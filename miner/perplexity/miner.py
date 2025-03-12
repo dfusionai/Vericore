@@ -7,9 +7,12 @@ import json
 from typing import Tuple, List
 import logging
 
+from dotenv import load_dotenv
+
 from shared.log_data import LoggerType
-from shared.proxy_log_handler import registerProxyLogHandler
+from shared.proxy_log_handler import register_proxy_log_handler
 from shared.veridex_protocol import VericoreSynapse, SourceEvidence
+
 
 # "openai" client from perplexity
 from openai import OpenAI
@@ -17,21 +20,23 @@ from openai import OpenAI
 # debug
 bt.logging.set_trace()
 
-LOGGER_API_URL = 'http://localhost:8086' # TO BE UPDATED
-ENABLE_PROXY_LOGGING = True # TO BE UPDATED
+load_dotenv()
 
 class Miner:
     def __init__(self):
         self.config = self.get_config()
         self.setup_bittensor_objects()
         self.setup_logging()
-        self.setup_bittensor_objects()
 
-        Load Perplexity AI key
-        Load Perplexity AI key
+        # Load Perplexity AI key
         self.perplexity_api_key = os.environ.get("PERPLEXITY_API_KEY", "YOUR_API_KEY_HERE")
         if not self.perplexity_api_key or self.perplexity_api_key.startswith("YOUR_API_KEY_HERE"):
             bt.logging.warning("No PERPLEXITY_API_KEY found. Please set it to use Perplexity.")
+
+        self.perplexity_client = OpenAI(
+            api_key=self.perplexity_api_key,
+            base_url="https://api.perplexity.ai"
+        )
 
     def get_config(self):
         parser = argparse.ArgumentParser()
@@ -63,10 +68,8 @@ class Miner:
         bt.logging.info(self.config)
 
     def setup_proxy_logger(self):
-        if ENABLE_PROXY_LOGGING:
-            bt_logger = logging.getLogger("bittensor")
-            proxy_url = LOGGER_API_URL
-            registerProxyLogHandler(bt_logger, proxy_url, LoggerType.Miner, self.wallet)
+        bt_logger = logging.getLogger("bittensor")
+        register_proxy_log_handler(bt_logger, LoggerType.Miner, self.wallet)
 
     def setup_bittensor_objects(self):
         bt.logging.info("Setting up Bittensor objects.")
@@ -153,6 +156,7 @@ Response MUST returned as a json array. If it isn't returned as json object the 
             {"role": "user", "content": user_content},
         ]
 
+        raw_text = None
         try:
             response = self.perplexity_client.chat.completions.create(
                 model="sonar-pro",
@@ -164,14 +168,15 @@ Response MUST returned as a json array. If it isn't returned as json object the 
                 return []
             raw_text = response.choices[0].message.content.strip()
 
-            bt.logging.warn(f"Returned : {raw_text}")
-
             data = json.loads(raw_text)
             if not isinstance(data, list):
                 bt.logging.warn(f"Perplexity response is not a list: {data}")
                 return []
             return data
         except Exception as e:
+            if not raw_text is None:
+                bt.logging.error(f"Raw Text of AI Response: {raw_text}")
+
             bt.logging.error(f"Error calling Perplexity AI: {e}")
             return []
 
