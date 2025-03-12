@@ -1,13 +1,19 @@
+import json
+import os
+import boto3
+
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 
-import json
-import boto3
-
 import bittensor as bt
-from shared.log_data import LogEntry, LoggerType
+from shared.log_data import LogEntry
+
+from dotenv import load_dotenv
+
+# debug
+load_dotenv()
 
 ###############################################################################
 # Aws Config Values (Should get from environment
@@ -16,19 +22,31 @@ from shared.log_data import LogEntry, LoggerType
 LOG_GROUP_NAME = "Vericore"  # Change this
 LOG_STREAM_NAME = "Logs"  # Change this
 
-AWS_ACCESS_KEY_ID: str ="TO_BE_UPDATED"
-AWS_SECRET_ACCESS_KEY: str="TO_BE_UPDATED"
+AWS_ACCESS_KEY_ID: str ="AKIAYK234GO4DWSPS6HH"
+AWS_SECRET_ACCESS_KEY: str="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"
 AWS_DEFAULT_REGION: str ="af-south-1"
+
 
 ###############################################################################
 # LogHandler: processes the json to send to Aws Cloud Watch
 ###############################################################################
 class LogHandler:
     def __init__(self):
+        # Load Perplexity AI key
+        aws_region_name = os.environ.get("AWS_DEFAULT_REGION", "us-east-1")
+        aws_access_key_id = os.environ.get("AWS_ACCESS_KEY_ID", "YOUR_API_KEY_HERE")
+        aws_secret_access_key = os.environ.get("AWS_SECRET_ACCESS_KEY", "YOUR_API_KEY_HERE")
+
+        if not aws_access_key_id or aws_access_key_id.startswith("YOUR_API_KEY_HERE"):
+            bt.logging.warning("No AWS_ACCESS_KEY_ID found. Please set it to use AWS.")
+
+        if not aws_secret_access_key or aws_secret_access_key.startswith("YOUR_API_KEY_HERE"):
+            bt.logging.warning("No AWS_ACCESS_KEY_ID found. Please set it to use AWS.")
+
         aws_session = boto3.Session(
-            region_name=AWS_DEFAULT_REGION,
-            aws_access_key_id=AWS_ACCESS_KEY_ID,
-            aws_secret_access_key=AWS_SECRET_ACCESS_KEY
+            region_name=aws_region_name,
+            aws_access_key_id=aws_access_key_id,
+            aws_secret_access_key=aws_secret_access_key
         )
         self.aws_log_client = aws_session.client(
             "logs",
@@ -66,7 +84,7 @@ class LogHandler:
         # Send log entry
         try:
             response = self.aws_log_client.put_log_events(**aws_log_event)
-            print(f"Log sent successfully:", response)
+            print(f"Log sent successfully: {response["nextSequenceToken"]}")
         except Exception as e:
             print(f"Error sending log entry: {e}")
 
