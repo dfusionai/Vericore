@@ -258,7 +258,7 @@ python -m miner.perplexity.miner --wallet.name bittensor --wallet.hotkey miner_h
 
 ### Running the Validator
 
-You'll need to run both the server and the daemon. You'll want to make sure to execute these scripts from the same directory. We recommend at least 24 GB GPU, 16 GB RAM, and 250GB storage.
+You'll need to run both the server and the daemon. You'll want to make sure to execute these scripts from the same directory. We recommend at least 24 GB GPU, 16 GB RAM, and 250GB storage. You'll also want to additionally expose port 8080 for http traffic.
 
 #### Server:
 
