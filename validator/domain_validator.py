@@ -7,8 +7,6 @@ def domain_is_recently_registered(domain):
     domain_info = whois.whois(domain)
     creation_date = domain_info.creation_date
 
-    print(f"domain_info: {domain_info}")
-
     # Check if creation_date is within the last X days (e.g., 30 days)
     if isinstance(creation_date, list):
         creation_date = creation_date[0]  # In case of multiple creation dates

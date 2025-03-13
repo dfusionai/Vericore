@@ -4,6 +4,7 @@ import random
 import argparse
 import asyncio
 import json
+import logging
 from typing import List
 
 from fastapi import FastAPI, Request, HTTPException
@@ -12,15 +13,18 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 import bittensor as bt
 
-from veridex_protocol import VericoreSynapse, SourceEvidence, VeridexResponse, VericoreStatementResponse,  VericoreMinerStatementResponse, VericoreQueryResponse
-
+from shared.veridex_protocol import VericoreSynapse, SourceEvidence, VeridexResponse, VericoreStatementResponse,  VericoreMinerStatementResponse, VericoreQueryResponse
+from shared.log_data import LoggerType
+from shared.proxy_log_handler import register_proxy_log_handler
 from validator.quality_model import VeridexQualityModel
 from validator.verify_context_quality_model import VerifyContextQualityModel
 from validator.active_tester import StatementGenerator
 from validator.snippet_fetcher import SnippetFetcher
 from validator.domain_validator import domain_is_recently_registered
-from fuzzywuzzy import fuzz
-import lxml.html
+# from fuzzywuzzy import fuzz
+# import lxml.html
+
+from dotenv import load_dotenv
 
 from dataclasses import asdict
 
@@ -28,6 +32,9 @@ from bs4 import BeautifulSoup
 
 # debug
 bt.logging.set_trace()
+
+# debug
+load_dotenv()
 
 
 ###############################################################################
@@ -38,8 +45,9 @@ class APIQueryHandler:
     def __init__(self):
         self.config = self.get_config()
         bt.logging.info(f"__init {self.config}")
-        self.setup_logging()
         self.setup_bittensor_objects()  # Creates dendrite, wallet, subtensor, metagraph only once.
+        self.setup_logging()
+
         self.my_uid = self.metagraph.hotkeys.index(self.wallet.hotkey.ss58_address)
         # Local moving scores (for tracking locally; the daemon aggregates independently)
         self.moving_scores = [1.0] * len(self.metagraph.S)
@@ -76,6 +84,8 @@ class APIQueryHandler:
         bt.logging(config=self.config, logging_dir=self.config.full_path)
         bt.logging.info("Starting APIQueryHandler with config:")
         bt.logging.info(self.config)
+        bt_logger = logging.getLogger("bittensor")
+        register_proxy_log_handler(bt_logger, LoggerType.Validator, self.wallet)
 
     def setup_bittensor_objects(self):
         bt.logging.info("Setting up Bittensor objects for API Server.")
@@ -94,7 +104,6 @@ class APIQueryHandler:
         else:
             self.my_subnet_uid = self.metagraph.hotkeys.index(self.wallet.hotkey.ss58_address)
             bt.logging.info(f"API Server running on uid: {self.my_subnet_uid}")
-
 
     async def call_axon(self, request_id, target_axon, synapse):
         start_time = time.time()
@@ -119,7 +128,7 @@ class APIQueryHandler:
       # snippet was not processed - Score: -1
       if not snippet_str:
         snippet_score = -1.0
-        veridex_miner_response = VericoreStatementResponse(
+        vericore_miner_response = VericoreStatementResponse(
 	        url=evid.url,
           excerpt = evid.excerpt,
           domain = domain,
@@ -127,7 +136,7 @@ class APIQueryHandler:
           local_score = 0.0,
           snippet_score = snippet_score
         )
-        return veridex_miner_response
+        return vericore_miner_response
 
       bt.logging.info(f'{request_id} | Verifying Snippet')
 
@@ -144,7 +153,7 @@ class APIQueryHandler:
       # #todo - ask patrick - should we penalise more for provided urls without the extracted snippet
       if not snippet_found:
         snippet_score = -1.0
-        veridex_miner_response = VericoreStatementResponse(
+        vericore_miner_response = VericoreStatementResponse(
   	      url=evid.url,
           excerpt = evid.excerpt,
           domain = domain,
@@ -152,14 +161,14 @@ class APIQueryHandler:
           local_score = 0.0,
           snippet_score = snippet_score
         )
-        return veridex_miner_response
+        return vericore_miner_response
 
       # Dont score if domain was registered within 30 days.
       domain_registered_recently = domain_is_recently_registered(domain)
       bt.logging.info(f'{request_id} | Is domain registered recently: {domain_registered_recently}')
       if domain_registered_recently:
         snippet_score = -1.0
-        veridex_miner_response = VericoreStatementResponse(
+        vericore_miner_response = VericoreStatementResponse(
 		      url=evid.url,
 		      excerpt=evid.excerpt,
 		      domain=domain,
@@ -167,10 +176,10 @@ class APIQueryHandler:
 		      local_score=0.0,
 		      snippet_score=snippet_score
 	      )
-        return veridex_miner_response
+        return vericore_miner_response
 
       probs, local_score = self.quality_model.score_pair_distrib(statement, snippet_str)
-      veridex_miner_response = VericoreStatementResponse(
+      vericore_miner_response = VericoreStatementResponse(
         url = evid.url,
         excerpt = evid.excerpt,
         domain = domain,
@@ -184,7 +193,7 @@ class APIQueryHandler:
       )
       end_time = time.time()
       bt.logging.info(f"{request_id} | Finished miner snippet at {end_time} (Duration: {end_time - start_time})")
-      return veridex_miner_response
+      return vericore_miner_response
 
     async def process_miner_request(
 		    self,
@@ -328,7 +337,6 @@ class APIQueryHandler:
     def _select_miner_subset(self, k=5):
         all_axons = self.metagraph.axons
         bt.logging.info(f"Selecting miner subset:")
-        bt.logging.info(f"Selecting miner subset: {all_axons}")
         if len(all_axons) <= k:
             return all_axons
         return random.sample(all_axons, k)
@@ -404,13 +412,17 @@ async def lifespan(app: FastAPI):
     yield  # This keeps the app running
     bt.logging.info("Application is shutting down...")
 
-app = FastAPI(title="Veridex API Server", lifespan=lifespan)
+app = FastAPI(title="Vericore API Server", lifespan=lifespan)
 
 # DEBUG ONLY
 # Allowed origins (domains that can access the API)
+# origins = [
+#     "http://localhost:4200",  # Allow local frontend apps
+# ]
 origins = [
-    "http://localhost:4200",  # Allow local frontend apps
+    "*",
 ]
+
 
 # Add CORS middleware
 app.add_middleware(

@@ -5,8 +5,14 @@ import traceback
 import bittensor as bt
 import json
 from typing import Tuple, List
+import logging
 
-from veridex_protocol import VericoreSynapse, SourceEvidence
+from dotenv import load_dotenv
+
+from shared.log_data import LoggerType
+from shared.proxy_log_handler import register_proxy_log_handler
+from shared.veridex_protocol import VericoreSynapse, SourceEvidence
+
 
 # "openai" client from perplexity
 from openai import OpenAI
@@ -14,11 +20,13 @@ from openai import OpenAI
 # debug
 bt.logging.set_trace()
 
+load_dotenv()
+
 class Miner:
     def __init__(self):
         self.config = self.get_config()
-        self.setup_logging()
         self.setup_bittensor_objects()
+        self.setup_logging()
 
         # Load Perplexity AI key
         self.perplexity_api_key = os.environ.get("PERPLEXITY_API_KEY", "YOUR_API_KEY_HERE")
@@ -59,6 +67,10 @@ class Miner:
         )
         bt.logging.info(self.config)
 
+    def setup_proxy_logger(self):
+        bt_logger = logging.getLogger("bittensor")
+        register_proxy_log_handler(bt_logger, LoggerType.Miner, self.wallet)
+
     def setup_bittensor_objects(self):
         bt.logging.info("Setting up Bittensor objects.")
         self.wallet = bt.wallet(config=self.config)
@@ -90,11 +102,11 @@ class Miner:
         """
         Calls Perplexity. Returns a list of (url, snippet) with no XPATH offsets.
         """
-        bt.logging.info(f"veridex_forward {synapse.request_id}")
+        bt.logging.info(f"{synapse.request_id} | Received Veridex request ")
         statement = synapse.statement
-        bt.logging.info(f"calling perplexity {synapse.request_id}")
+        bt.logging.info(f"{synapse.request_id} | Calling perplexity ")
         results = self.call_perplexity_ai(statement)
-        bt.logging.info(f"received perplexity response {synapse.request_id}")
+        bt.logging.info(f"{synapse.request_id} | Received response from perplexity ")
         if not results:
             synapse.veridex_response = []
             return synapse
@@ -109,7 +121,7 @@ class Miner:
                 final_evidence.append(ev)
 
         synapse.veridex_response = final_evidence
-        bt.logging.info(f"Miner returns {len(final_evidence)} evidence items for statement: '{statement}'.")
+        bt.logging.info(f"{synapse.request_id} | Miner returns {len(final_evidence)} evidence items for statement: '{statement}'.")
         return synapse
 
     def call_perplexity_ai(self, statement: str) -> List[dict]:
@@ -118,7 +130,7 @@ class Miner:
         2) Parse JSON from the response -> [ {url, snippet}, ... ].
         """
         system_content = """
-You are a helpful AI assistant that fact checks statements.
+You are an API that fact checks statements.
 
 Rules:
 1. Return the response **only as a JSON array**.
@@ -127,14 +139,15 @@ Rules:
    [{"url": "<source url>", "snippet": "<snippet that directly agrees with or contradicts statement>"}]
 3. Do not include any introductory text, explanations, or additional commentary.
 4. Do not add any labels, headers, or markdown formatting—only return the JSON array.
-5. Ensure the response starts directly with [ and ends with ]. No extra text.
 
 Steps:
 1. Find sources / text segments that either contradict or agree with the user provided statement.
 2. Pick and extract the segments that most strongly agree or contradict the statement.
 3. Do not return urls or segments that do not directly support or disagree with the statement.
 4. Do not change any text in the segments (must return an exact html text match), but do shorten the segment to get only the part that directly agrees or disagrees with the statement.
-5. Create the json object for each source and statement and collect them into a list.
+5. Create the json object for each source and statement and add them only INTO ONE array
+
+Response MUST returned as a json array. If it isn't returned as json object the response MUST BE EMPTY.
 """
         user_content = f"Return snippets that strongly agree with or reject the following statement:\n{statement}"
 
@@ -143,6 +156,7 @@ Steps:
             {"role": "user", "content": user_content},
         ]
 
+        raw_text = None
         try:
             response = self.perplexity_client.chat.completions.create(
                 model="sonar-pro",
@@ -153,18 +167,22 @@ Steps:
                 bt.logging.warn(f"Perplexity returned no choices: {response}")
                 return []
             raw_text = response.choices[0].message.content.strip()
+
             data = json.loads(raw_text)
             if not isinstance(data, list):
                 bt.logging.warn(f"Perplexity response is not a list: {data}")
                 return []
             return data
         except Exception as e:
+            if not raw_text is None:
+                bt.logging.error(f"Raw Text of AI Response: {raw_text}")
+
             bt.logging.error(f"Error calling Perplexity AI: {e}")
             return []
 
     def setup_axon(self):
         self.axon = bt.axon(wallet=self.wallet, config=self.config)
-        bt.logging.info("Attaching forward function to axon.")
+        bt.logging.info(f"Attaching forward function to axon" )
         self.axon.attach(
             forward_fn=self.veridex_forward,
             blacklist_fn=self.blacklist_fn,
@@ -177,7 +195,13 @@ Steps:
         self.axon.start()
 
     def run(self):
+        bt.logging.info("Setting up axon")
         self.setup_axon()
+
+        bt.logging.info("Setting up proxy logger")
+
+        self.setup_proxy_logger()
+
         bt.logging.info("Starting main loop")
         step = 0
         while True:
