@@ -11,7 +11,3 @@ fuzzywuzzy
 sentence-transformers
 python-whois
 beautifulsoup4
-
-
-# logger requirements
-boto3
