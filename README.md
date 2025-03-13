@@ -1,7 +1,4 @@
-
-# Bittensor Subnet Template
-
-This repository provides a minimal template for setting up a simple Bittensor subnet with a miner and a validator. The miner and validator communicate using a custom protocol defined in `protocol.py`. This template serves as a starting point for developers interested in building on the Bittensor network.
+# dFusion Vericore: Semantic Intelligence for Fact Checking at Scale
 
 ## Table of Contents
 
@@ -24,28 +21,42 @@ This repository provides a minimal template for setting up a simple Bittensor su
 ---
 
 ## Overview
+Vericore is a Bittensor subnet seeking to improve large-scale semantic fact-checking and verification. The subnet processes statements and returns evidence-based validation through relevant quotes and source materials that either support or contradict the input claims.
 
-This template demonstrates how to:
+### Key Features
+- **Semantic Analysis**: Processes natural language statements and understands their semantic meaning
+- **Source Verification**: Returns precise quotes and segments from sources
+- **Dual Validation**: Provides both corroborating and contradicting evidence when available
+- **Scale-Oriented**: Designed to incentivize high-volume fact-checking operations
+- **Source Attribution**: All returned evidence includes traceable source information
 
-- Set up a basic miner that responds to queries from validators.
-- Implement a validator that sends queries to miners and adjusts their scores based on responses.
-- Use a custom protocol for communication between the miner and validator.
-- Update weights on the Bittensor blockchain based on miner performance.
-
-By following this guide, you'll have a functional miner and validator interacting on a Bittensor subnet.
+### Use Cases
+- Media fact-checking
+- Research validation
+- Content verification
+- Information integrity assessment
+- Source validation and cross-referencing
 
 ## Project Structure
 
 ```
-bittensor_subnet/
-├── miner.py          # Miner node script
-├── validator.py      # Validator node script
-└── protocol.py       # Custom protocol definition
+Vericore/
+├── miner/
+    ├── perplexity/
+        └── miner.py         # Sample implementation of a naive miner using Perplexity
+├── shared/
+    ├── log_data.py          # Log settings and format
+    ├── proxy_log_handler.py # Log handler
+    └── veridex_protocol.py  # Protocol for comms between Validator and Miner
+└── validator
+    ├── active_tester.py     # Produces tests for the miners
+    ├── api_server.py        # Api Server for receiving statements as input
+    ├── domain_validator.py  # Handles domain validation
+    ├── quality_model.py     # Measure Corroboration or Refutation of statements
+    ├── snippet_fetcher.py   # Fetches referenced source material for validation
+    ├── validator_daemon.py  # Daemon that handles axons / server tasks
+    └── verify_context_quality_model.py 
 ```
-
-- **miner.py**: Implements a miner that listens for incoming requests and responds according to the protocol.
-- **validator.py**: Implements a validator that sends requests to miners and updates their scores.
-- **protocol.py**: Defines the custom protocol used for communication between the miner and validator.
 
 ## Prerequisites
 
@@ -63,8 +74,8 @@ Before you begin, ensure you have the following installed:
 Clone this repository to your local machine:
 
 ```bash
-git clone https://github.com/yourusername/bittensor_subnet.git
-cd bittensor_subnet
+git clone git@github.com:dfusionai/Vericore.git
+cd Vericore
 ```
 
 ### 2. Install Dependencies
@@ -236,7 +247,7 @@ Register both the miner and validator on the Bittensor network.
 In one terminal window, navigate to the project directory and run:
 
 ```bash
-python miner.py --wallet.name mywallet --wallet.hotkey miner_hotkey --subtensor.chain_endpoint ws://127.0.0.1:9944 --axon.port 8901
+python -m miner.perplexity.miner --wallet.name bittensor --wallet.hotkey miner_hotkey --subtensor.network ws://127.0.0.1:9944 --axon.port 8901 --netuid 70
 ```
 
 **Arguments**:
@@ -247,11 +258,19 @@ python miner.py --wallet.name mywallet --wallet.hotkey miner_hotkey --subtensor.
 
 ### Running the Validator
 
-In another terminal window, navigate to the project directory and run:
+You'll need to run both the server and the daemon. You'll want to make sure to execute these scripts from the same directory. We recommend at least 24 GB GPU, 16 GB RAM, and 250GB storage.
+
+#### Server:
 
 ```bash
-python validator.py --wallet.name mywallet --wallet.hotkey validator_hotkey --subtensor.chain_endpoint ws://127.0.0.1:9944
+python -m validator.api_server --wallet.name bittensor --wallet.hotkey validator_hotkey --subtensor.network ws://127.0.0.1:9944  --netuid 70
 ```
+
+#### Daemon:
+```bash
+python -m validator.validator_daemon --wallet.name bittensor --wallet.hotkey validator_hotkey --subtensor.network ws://127.0.0.1:9944  --netuid 70
+```
+
 
 **Arguments**:
 
@@ -276,48 +295,9 @@ You can monitor these logs to observe the interactions and performance metrics.
 
 ---
 
-## Customization
-
-### Modifying the Protocol
-
-The communication protocol is defined in `protocol.py`. You can modify or extend the `Dummy` class to implement more complex interactions.
-
-Example:
-
-```python
-class CustomProtocol(bt.Synapse):
-    # Define your custom protocol attributes and methods
-    ...
-```
-
-Update `miner.py` and `validator.py` to use your custom protocol.
-
-### Adjusting Scoring Logic
-
-In `validator.py`, the validator adjusts miner scores based on their responses. You can modify the scoring logic in the main loop to suit your needs.
-
-Example:
-
-```python
-# Custom scoring logic
-if resp_i == expected_value:
-    score = 1
-else:
-    score = 0
-```
-
-### Changing Network Parameters
-
-You can adjust network parameters like `netuid`, timeouts, and other settings via command-line arguments or by modifying the code.
-
----
-
 ## Notes and Considerations
 
-- **Security**: This template is for educational purposes. In a production environment, ensure robust security measures are in place.
-- **Error Handling**: The provided code includes basic error handling. Enhance it to handle edge cases and exceptions gracefully.
-- **Network Compatibility**: Ensure that the `netuid` and `subtensor.network` values match the subnet you intend to connect to.
-- **Bittensor Updates**: Bittensor is an evolving project. Keep your SDK updated and adjust the code as necessary to accommodate changes.
+TBD
 
 ---
 
