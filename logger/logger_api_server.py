@@ -1,6 +1,8 @@
 import json
 import os
 import boto3
+import time
+import argparse
 
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import JSONResponse
@@ -15,17 +17,14 @@ from dotenv import load_dotenv
 # debug
 load_dotenv()
 
+REFRESH_INTERVAL_SECONDS = 90
+
 ###############################################################################
 # Aws Config Values (Should get from environment
 ###############################################################################
 
 LOG_GROUP_NAME = "Vericore"  # Change this
 LOG_STREAM_NAME = "Logs"  # Change this
-
-AWS_ACCESS_KEY_ID: str ="AKIAYK234GO4DWSPS6HH"
-AWS_SECRET_ACCESS_KEY: str="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"
-AWS_DEFAULT_REGION: str ="af-south-1"
-
 
 ###############################################################################
 # LogHandler: processes the json to send to Aws Cloud Watch
@@ -69,6 +68,60 @@ class LogHandler:
               print("Log stream already exists")
           else:
               raise
+
+        # Get config from arguments passed
+        self.last_refresh_time = 0  # Timestamp of the last sync
+
+        self.config = self.get_config()
+        print(f"Fetched and configured config")
+        self.subtensor = bt.subtensor(config=self.config)
+        print(f"Subtensor: {self.subtensor}")
+        # fetch metagraph object for validating wallets
+        self.metagraph = self.subtensor.metagraph(self.config.netuid)
+        print(f"Metagraph: {self.metagraph}")
+
+    def get_config(self):
+        parser = argparse.ArgumentParser()
+        parser.add_argument("--custom", default="my_custom_value", help="Custom value")
+        parser.add_argument("--netuid", type=int, default=1, help="Chain subnet uid")
+        bt.subtensor.add_args(parser)
+        return bt.config(parser)
+
+    def refresh_metagraph(self):
+        current_time = time.time()
+        if  (current_time - self.last_refresh_time) > REFRESH_INTERVAL_SECONDS:
+            print("Refreshing metagraph")
+            self.metagraph.sync()  # Fetch new data
+
+    def verify_request(self, request: Request, log_entry: LogEntry):
+        if not request.headers.get("wallet"):
+            raise HTTPException(status_code=401, detail="Invalid wallet")
+
+        if not request.headers.get("signature"):
+            raise HTTPException(status_code=401, detail="Invalid signature")
+
+        wallet_hotkey = request.headers.get("wallet")
+        signature = request.headers.get("signature")
+
+        #refresh metagraph
+        self.refresh_metagraph()
+        # check to see whether wallet hotkey is valid within the bittensor network
+        if not wallet_hotkey in self.metagraph.hotkeys:
+            raise HTTPException(status_code=401, detail="Invalid wallet hotkey")
+
+        # create message
+        message = f"{log_entry.level}.{log_entry.timestamp}.{wallet_hotkey}.log"
+        message_bytes = message.encode("utf-8")
+        signature_bytes = bytes.fromhex(signature)
+
+        hotkey = bt.Keypair(ss58_address=wallet_hotkey)
+        verified = hotkey.verify(message_bytes, signature_bytes)
+
+        print(f"Verified: {verified}")
+
+        if not verified:
+            raise HTTPException(status_code=401, detail="Unauthorized signature")
+
     def sendLogEvent(self, log_entry: LogEntry):
         aws_log_event = {
             # "sequenceToken": sequence_token,
@@ -122,28 +175,6 @@ async def startup_event():
     app.state.handler = LogHandler()
     print("LogHandler instance created at startup.")
 
-def verify_request(request: Request, log_entry: LogEntry):
-    if not request.headers.get("wallet"):
-        raise HTTPException(status_code=401, detail="Invalid wallet")
-
-    if not request.headers.get("signature"):
-        raise HTTPException(status_code=401, detail="Invalid signature")
-
-    wallet_hotkey = request.headers.get("wallet")
-    signature = request.headers.get("signature")
-
-    # create message
-    message = f"{log_entry.level}.{log_entry.timestamp}.{wallet_hotkey}.log"
-    message_bytes = message.encode("utf-8")
-    signature_bytes =  bytes.fromhex(signature)
-
-    hotkey = bt.Keypair(ss58_address=wallet_hotkey)
-    verified = hotkey.verify(message_bytes, signature_bytes)
-
-    print(f"Verified: {verified}")
-
-    if not verified:
-        raise HTTPException(status_code=401, detail="Unauthorized signature")
 
 @app.post("/log")
 async def log(request: Request):
@@ -158,9 +189,10 @@ async def log(request: Request):
     if not log_entry:
         raise HTTPException(status_code=400, detail="Invalid Log Entry")
 
-    verify_request(request, log_entry)
-
     handler = app.state.handler
+
+    handler.verify_request(request, log_entry)
+
     handler.logEvent(log_entry)
 
     print(f"Sent log")
