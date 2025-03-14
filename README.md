@@ -55,7 +55,7 @@ Vericore/
     ├── quality_model.py     # Measure Corroboration or Refutation of statements
     ├── snippet_fetcher.py   # Fetches referenced source material for validation
     ├── validator_daemon.py  # Daemon that handles axons / server tasks
-    └── verify_context_quality_model.py 
+    └── verify_context_quality_model.py
 ```
 
 ## Prerequisites
@@ -216,9 +216,12 @@ The `btcli` tool is used to manage wallets and keys.
 
 The below commands establish a new subnet on the local chain. The cost will be exactly τ1000.000000000 for the first subnet you create and you'll have to run the faucet several times to get enough tokens.
 
-     ```bash
-		 btcli subnet create --wallet.name owner --subtensor.chain_endpoint ws://127.0.0.1:9946
-			```
+  ```bash
+		 btcli subnet create --wallet.name owner --subtensor.chain_endpoint
+  ```
+
+> **Note**: If you're not connecting to the Mainnet, add `ws://127.0.0.1:9944` or specify the name of the network you wish to connect to.
+
 ### 4. Register Wallets
 
 Register both the miner and validator on the Bittensor network.
@@ -226,16 +229,18 @@ Register both the miner and validator on the Bittensor network.
 - **Register the Miner**:
 
   ```bash
-  btcli s register --wallet.name mywallet --wallet.hotkey miner_hotkey --subtensor.chain_endpoint ws://127.0.0.1:9944
+  btcli s register --wallet.name mywallet --wallet.hotkey miner_hotkey --subtensor.chain_endpoint
   ```
+
+> **Note**: If you're not connecting to the Mainnet, add `ws://127.0.0.1:9944` or specify the name of the network you wish to connect to.
 
 - **Register the Validator**:
 
   ```bash
-  btcli s register --wallet.name mywallet --wallet.hotkey validator_hotkey --subtensor.chain_endpoint ws://127.0.0.1:9944
+  btcli s register --wallet.name mywallet --wallet.hotkey validator_hotkey
   ```
 
-> **Note**: Replace `ws://127.0.0.1:9944` with the name of the network you are connecting to if different.
+> **Note**: If you're not connecting to the Mainnet, add `ws://127.0.0.1:9944` or specify the name of the network you wish to connect to.
 
 ---
 
@@ -247,8 +252,11 @@ Register both the miner and validator on the Bittensor network.
 In one terminal window, navigate to the project directory and run:
 
 ```bash
-python -m miner.perplexity.miner --wallet.name bittensor --wallet.hotkey miner_hotkey --subtensor.network ws://127.0.0.1:9944 --axon.port 8901 --netuid 70
+python -m miner.perplexity.miner --wallet.name bittensor --wallet.hotkey miner_hotkey --axon.port 8901 --netuid 70
 ```
+
+> **Note**: If you're not connecting to the Mainnet, add `ws://127.0.0.1:9944` or specify the name of the network you wish to connect to.
+
 
 **Arguments**:
 
@@ -263,14 +271,17 @@ You'll need to run both the server and the daemon. You'll want to make sure to e
 #### Server:
 
 ```bash
-python -m validator.api_server --wallet.name bittensor --wallet.hotkey validator_hotkey --subtensor.network ws://127.0.0.1:9944  --netuid 70
+python -m validator.api_server --wallet.name bittensor --wallet.hotkey validator_hotkey  --netuid 70
 ```
+
+> **Note**: If you're not connecting to the Mainnet, add `ws://127.0.0.1:9944` or specify the name of the network you wish to connect to.
 
 #### Daemon:
 ```bash
 python -m validator.validator_daemon --wallet.name bittensor --wallet.hotkey validator_hotkey --subtensor.network ws://127.0.0.1:9944  --netuid 70
 ```
 
+> **Note**: If you're not connecting to the Mainnet, add `ws://127.0.0.1:9944` or specify the name of the network you wish to connect to.
 
 **Arguments**:
 
