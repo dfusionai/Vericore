@@ -66,6 +66,7 @@ class APIQueryHandler:
         bt.subtensor.add_args(parser)
         bt.logging.add_args(parser)
         bt.wallet.add_args(parser)
+        bt.axon.add_args(parser)
         config = bt.config(parser)
 
         bt.logging.info(f"get_config: {config}")
@@ -98,12 +99,17 @@ class APIQueryHandler:
         bt.logging.info(f"Dendrite: {self.dendrite}")
         self.metagraph = self.subtensor.metagraph(self.config.netuid)
         bt.logging.info(f"Metagraph: {self.metagraph}")
+
+        self.axon = bt.axon(wallet=self.wallet, config=self.config)
+        self.axon.serve(netuid=self.config.netuid, subtensor=self.subtensor)
+
         if self.wallet.hotkey.ss58_address not in self.metagraph.hotkeys:
             bt.logging.error("Wallet not registered on chain. Run 'btcli register'.")
             exit()
         else:
             self.my_subnet_uid = self.metagraph.hotkeys.index(self.wallet.hotkey.ss58_address)
             bt.logging.info(f"API Server running on uid: {self.my_subnet_uid}")
+
 
     async def call_axon(self, request_id, target_axon, synapse):
         start_time = time.time()
