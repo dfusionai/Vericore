@@ -49,6 +49,5 @@ class ProxyLogHandler(logging.Handler):
             }
             requests.post(self.proxy_url, json=log_entry, timeout=5, headers=headers)
         except requests.exceptions.RequestException as e:
-            #todo - not sure what to do here - can we miss a few logs
             # Not using bittensor logging here - otherwise we will go into a loop!
             print(f"Failed to send log to proxy: {e}")

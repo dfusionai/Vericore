@@ -5,7 +5,6 @@ import argparse
 import asyncio
 import json
 import logging
-from typing import List
 
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import JSONResponse
@@ -21,8 +20,6 @@ from validator.verify_context_quality_model import VerifyContextQualityModel
 from validator.active_tester import StatementGenerator
 from validator.snippet_fetcher import SnippetFetcher
 from validator.domain_validator import domain_is_recently_registered
-# from fuzzywuzzy import fuzz
-# import lxml.html
 
 from dotenv import load_dotenv
 
@@ -118,82 +115,81 @@ class APIQueryHandler:
         return veridex_response
 
     def process_miner_response(self, request_id, evid, statement):
-      start_time = time.time()
-      bt.logging.info(f"{request_id} | Started miner response at {start_time}")
+        start_time = time.time()
+        bt.logging.info(f"{request_id} | Started miner response at {start_time}")
 
-      domain = self._extract_domain(evid.url)
+        domain = self._extract_domain(evid.url)
 
-      bt.logging.info(f"{request_id} | Verifying miner statement ")
-      snippet_str = evid.excerpt.strip()
-      # snippet was not processed - Score: -1
-      if not snippet_str:
-        snippet_score = -1.0
+        bt.logging.info(f"{request_id} | Verifying miner statement ")
+        snippet_str = evid.excerpt.strip()
+        # snippet was not processed - Score: -1
+        if not snippet_str:
+            snippet_score = -1.0
+            vericore_miner_response = VericoreStatementResponse(
+	            url=evid.url,
+                excerpt = evid.excerpt,
+                domain = domain,
+                snippet_found = False,
+                local_score = 0.0,
+                snippet_score = snippet_score
+            )
+            return vericore_miner_response
+
+        bt.logging.info(f'{request_id} | Verifying Snippet')
+
+        # Fetch page text
+        page_text = self._fetch_page_text(evid.url)
+
+        # Verify that the snippet is actually within the provided url
+        snippet_found = self._verify_snippet_in_rendered_page(request_id, page_text, snippet_str)
+
+        bt.logging.info(f'{request_id} | Url: {evid.url} | Snippet: {snippet_str} | Snippet Verified  {snippet_found}')
+
+        # Snippet was not found from the provided url
+        # #todo - should we penalise more for provided urls without the extracted snippet
+        if not snippet_found:
+            snippet_score = -1.0
+            vericore_miner_response = VericoreStatementResponse(
+                url=evid.url,
+                excerpt = evid.excerpt,
+                domain = domain,
+                snippet_found = False,
+                local_score = 0.0,
+                snippet_score = snippet_score
+            )
+            return vericore_miner_response
+
+        # Dont score if domain was registered within 30 days.
+        domain_registered_recently = domain_is_recently_registered(domain)
+        bt.logging.info(f'{request_id} | Is domain registered recently: {domain_registered_recently}')
+        if domain_registered_recently:
+            snippet_score = -1.0
+            vericore_miner_response = VericoreStatementResponse(
+                url=evid.url,
+                excerpt=evid.excerpt,
+                domain=domain,
+                snippet_found=False,
+                local_score=0.0,
+                snippet_score=snippet_score
+            )
+            return vericore_miner_response
+
+        probs, local_score = self.quality_model.score_pair_distrib(statement, snippet_str)
         vericore_miner_response = VericoreStatementResponse(
-	        url=evid.url,
-          excerpt = evid.excerpt,
-          domain = domain,
-          snippet_found = False,
-          local_score = 0.0,
-          snippet_score = snippet_score
+            url = evid.url,
+            excerpt = evid.excerpt,
+            domain = domain,
+            snippet_found = True,
+            domain_factor = 0,
+            contradiction = probs["contradiction"],
+            neutral = probs["neutral"],
+            entailment = probs["entailment"],
+            local_score = local_score,
+            snippet_score = 0
         )
+        end_time = time.time()
+        bt.logging.info(f"{request_id} | Finished miner snippet at {end_time} (Duration: {end_time - start_time})")
         return vericore_miner_response
-
-      bt.logging.info(f'{request_id} | Verifying Snippet')
-
-      # Fetch page text
-      page_text = self._fetch_page_text(evid.url)
-
-      # Verify that the snippet is actually within the provided url
-      # #todo - ask patrick - should we split score between url exists and whether the web-page does include the snippet
-      snippet_found = self._verify_snippet_in_rendered_page(request_id, page_text, snippet_str)
-
-      bt.logging.info(f'{request_id} | Url: {evid.url} | Snippet: {snippet_str} | Snippet Verified  {snippet_found}')
-
-      # Snippet was not found from the provided url
-      # #todo - ask patrick - should we penalise more for provided urls without the extracted snippet
-      if not snippet_found:
-        snippet_score = -1.0
-        vericore_miner_response = VericoreStatementResponse(
-  	      url=evid.url,
-          excerpt = evid.excerpt,
-          domain = domain,
-          snippet_found = False,
-          local_score = 0.0,
-          snippet_score = snippet_score
-        )
-        return vericore_miner_response
-
-      # Dont score if domain was registered within 30 days.
-      domain_registered_recently = domain_is_recently_registered(domain)
-      bt.logging.info(f'{request_id} | Is domain registered recently: {domain_registered_recently}')
-      if domain_registered_recently:
-        snippet_score = -1.0
-        vericore_miner_response = VericoreStatementResponse(
-		      url=evid.url,
-		      excerpt=evid.excerpt,
-		      domain=domain,
-		      snippet_found=False,
-		      local_score=0.0,
-		      snippet_score=snippet_score
-	      )
-        return vericore_miner_response
-
-      probs, local_score = self.quality_model.score_pair_distrib(statement, snippet_str)
-      vericore_miner_response = VericoreStatementResponse(
-        url = evid.url,
-        excerpt = evid.excerpt,
-        domain = domain,
-        snippet_found = True,
-        domain_factor = 0,
-        contradiction = probs["contradiction"],
-        neutral = probs["neutral"],
-        entailment = probs["entailment"],
-        local_score = local_score,
-        snippet_score = 0
-      )
-      end_time = time.time()
-      bt.logging.info(f"{request_id} | Finished miner snippet at {end_time} (Duration: {end_time - start_time})")
-      return vericore_miner_response
 
     async def process_miner_request(
 		    self,
@@ -414,15 +410,9 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Vericore API Server", lifespan=lifespan)
 
-# DEBUG ONLY
-# Allowed origins (domains that can access the API)
-# origins = [
-#     "http://localhost:4200",  # Allow local frontend apps
-# ]
 origins = [
     "*",
 ]
-
 
 # Add CORS middleware
 app.add_middleware(
