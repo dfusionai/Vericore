@@ -36,6 +36,7 @@ bt.logging.set_trace()
 # debug
 load_dotenv()
 
+NUMBER_OF_WORKER_THREADS = 5
 
 ###############################################################################
 # APIQueryHandler: handles miner queries, scores responses, and writes each
@@ -461,5 +462,5 @@ if __name__ == "__main__":
     import uvicorn
 
     # Run uvicorn with one worker to ensure a single instance of APIQueryHandler.
-    uvicorn.run("validator.api_server:app", host="0.0.0.0", port=8080, reload=False, timeout_keep_alive=500)
+    uvicorn.run("validator.api_server:app", host="0.0.0.0", port=8080, reload=False, workers=NUMBER_OF_WORKER_THREADS,timeout_keep_alive=500)
 
