@@ -90,6 +90,8 @@ def main():
             bt.logging.info(f"Will aggregate results: {last_update} > {tempo + 1} = {last_update > tempo + 1} ")
             if last_update > tempo + 1:
                 bt.logging.info(f"Aggregating results")
+                metagraph.sync()
+
                 # create new moving scores array in case new miners have been loaded
                 moving_scores = [1.0] * len(metagraph.S)
                 moving_scores = aggregate_results(results_dir, moving_scores)
@@ -106,7 +108,7 @@ def main():
                     weights=weights,
                     wait_for_inclusion=True,
                 )
-                metagraph.sync()
+            metagraph.sync()
             time.sleep(60)
         except KeyboardInterrupt:
             bt.logging.info(f"Validator Daemon interrupted. Exiting.")
