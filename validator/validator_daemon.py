@@ -80,7 +80,7 @@ def main():
     wallet, subtensor, metagraph = setup_bittensor_objects(config)
     results_dir = "results"
     os.makedirs(results_dir, exist_ok=True)
-    moving_scores = [1.0] * len(metagraph.S)
+
     tempo = subtensor.tempo(config.netuid)
     my_uid = metagraph.hotkeys.index(wallet.hotkey.ss58_address)
     bt.logging.info("Starting Validator Daemon loop.")
@@ -90,6 +90,8 @@ def main():
             bt.logging.info(f"Will aggregate results: {last_update} > {tempo + 1} = {last_update > tempo + 1} ")
             if last_update > tempo + 1:
                 bt.logging.info(f"Aggregating results")
+                # create new moving scores array in case new miners have been loaded
+                moving_scores = [1.0] * len(metagraph.S)
                 moving_scores = aggregate_results(results_dir, moving_scores)
 
                 bt.logging.info(f"Moving scores: {moving_scores}")
