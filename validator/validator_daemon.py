@@ -61,8 +61,9 @@ def aggregate_results(results_dir, moving_scores):
                 miner_uid = res.get("miner_uid")
                 final_score = res.get("final_score")
                 if miner_uid is not None and final_score is not None:
-                    bt.logging.info(f"Moving score for uid: {miner_uid} and final score: {final_score}")
-                    moving_scores[miner_uid] = 0.8 * moving_scores[miner_uid] + 0.2 * final_score
+                    calculated_score = 0.8 * moving_scores[miner_uid] + 0.2 * final_score
+                    bt.logging.info(f"Moving score for uid: {miner_uid} and final score: {final_score} with calculated scored {calculated_score}")
+                    moving_scores[miner_uid] = calculated_score
         except Exception as e:
             bt.logging.error(f"Error processing file {filepath}: {e}")
         finally:
@@ -85,9 +86,13 @@ def main():
     bt.logging.info("Starting Validator Daemon loop.")
     while True:
         try:
-            moving_scores = aggregate_results(results_dir, moving_scores)
             last_update = subtensor.blocks_since_last_update(config.netuid, my_uid)
+            bt.logging.info(f"Will aggregate results: {last_update} > {tempo + 1} = {last_update > tempo + 1} ")
             if last_update > tempo + 1:
+                bt.logging.info(f"Aggregating results")
+                moving_scores = aggregate_results(results_dir, moving_scores)
+
+                bt.logging.info(f"Moving scores: {moving_scores}")
                 arr = np.array(moving_scores)
                 exp_arr = np.exp(arr)
                 weights = (exp_arr / np.sum(exp_arr)).tolist()
@@ -102,7 +107,7 @@ def main():
                 metagraph.sync()
             time.sleep(60)
         except KeyboardInterrupt:
-            bt.logging.info("Validator Daemon interrupted. Exiting.")
+            bt.logging.info(f"Validator Daemon interrupted. Exiting.")
             break
         except Exception as e:
             bt.logging.error(f"Error in daemon loop: {e}")
