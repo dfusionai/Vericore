@@ -14,15 +14,10 @@ from shared.log_data import LoggerType
 from shared.proxy_log_handler import register_proxy_log_handler
 from shared.veridex_protocol import VericoreSynapse, SourceEvidence
 
-
-# "openai" client from perplexity
-from openai import OpenAI
-
 # debug
 bt.logging.set_trace()
 
 load_dotenv()
-
 
 class Miner:
     def __init__(self):
@@ -31,13 +26,12 @@ class Miner:
         self.setup_logging()
 
         # Load Perplexity AI key
-        self.perplexity_url = os.environ.get("PERPLEXICA_URL", "YOUR_API_KEY_HERE")
-        if not self.perplexity_url or self.perplexity_url.startswith(
-            "YOUR_API_KEY_HERE"
-        ):
-            bt.logging.warning(
-                "No PERPLEXICA_URL found. Please set it to use Perplexica."
-            )
+        self.perplexica_url = os.environ.get("PERPLEXICA_URL", "YOUR_PLEXICA_URL_HERE")
+
+        bt.logging.trace(f"Provided url: {self.perplexica_url}: {not self.perplexica_url or self.perplexica_url.startswith("YOUR_PLEXICA_URL_HERE")}")
+
+        if not self.perplexica_url or self.perplexica_url.startswith("YOUR_PLEXICA_URL_HERE"):
+            bt.logging.warning("No PERPLEXICA_URL found. Please set it to use Perplexica Url.")
 
     def get_config(self):
         parser = argparse.ArgumentParser()
@@ -115,7 +109,7 @@ class Miner:
         statement = synapse.statement
         bt.logging.info(f"{synapse.request_id} | Calling perplexica ")
         results = self.call_perplexica(statement)
-        bt.logging.info(f"{synapse.request_id} | Received response from perplexica ")
+        bt.logging.info(f"{synapse.request_id} | Received response from perplexica")
         if not results:
             synapse.veridex_response = []
             return synapse
@@ -156,6 +150,7 @@ Steps:
 2. Pick and extract the segments that most strongly agree or contradict the statement.
 3. Do not return urls or segments that do not directly support or disagree with the statement.
 4. Do not change any text in the segments (must return an exact html text match), but do shorten the segment to get only the part that directly agrees or disagrees with the statement.
+5. Do not shorten the snippet provided. Do not add '...' in between the segments. Return the entire snippet.
 5. Create the json object for each source and statement and add them only INTO ONE array
 
 Response MUST returned as a json array. If it isn't returned as json object the response MUST BE EMPTY.
@@ -167,23 +162,52 @@ Response MUST returned as a json array. If it isn't returned as json object the 
             {"role": "user", "content": user_content},
         ]
 
+        perplexica_search_object = {
+            "chatModel": {
+                "provider": "openai",
+                "model": "gpt-4o-mini"
+            },
+            "optimizationMode": "speed",
+            "focusMode": "webSearch",
+            "query": f"{statement}",
+            "history": [
+                ["system", system_content],
+                ["human", user_content],
+            ]
+        }
         raw_text = None
         try:
             # add signature
-
-
             headers = {
                 "Content-Type": "application/json",
             }
+            endpoint_url = f"{self.perplexica_url}/api/search"
+            bt.logging.info(f"{endpoint_url} | Calling perplexica ")
+
             response = requests.post(
-                self.perplexity_url, json=log_entry, timeout=5, headers=headers
+                endpoint_url, json=perplexica_search_object, timeout=60, headers=headers
             )
-            if not hasattr(response, "choices") or len(response.choices) == 0:
-                bt.logging.warn(f"Perplexica returned no choices: {response}")
+
+            try:
+                response_data = response.json()  # Convert response to JSON
+            except json.JSONDecodeError:
+                bt.logging.warn(f"Perplexica returned an invalid JSON response: {response.text}")
                 return []
-            raw_text = response.choices[0].message.content.strip()
+
+            bt.logging.trace(f"Parsed json response data")
+
+            # Check whether message exists
+            if "message" not in response_data or not response_data["message"]:
+                bt.logging.warn(f"Perplexica returned no message: {response_data}")
+                return []
+
+            raw_text = response_data["message"].strip()
+            raw_text = raw_text.replace("```json", "").replace("```", "").strip()
 
             data = json.loads(raw_text)
+
+            bt.logging.trace(f"Cleaned up json message and parsed json object")
+
             if not isinstance(data, list):
                 bt.logging.warn(f"Perplexica response is not a list: {data}")
                 return []
@@ -191,7 +215,7 @@ Response MUST returned as a json array. If it isn't returned as json object the 
         except requests.exceptions.RequestException as e:
             # todo - not sure what to do here - can we miss a few logs
             # Not using bittensor logging here - otherwise we will go into a loop!
-            print(f"Failed to send log to proxy: {e}")
+            print(f"Failed to send request to perplexica: {e}")
             return []
         except Exception as e:
             if not raw_text is None:
