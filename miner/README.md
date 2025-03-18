@@ -1,0 +1,148 @@
+# Sample Miner Installation
+
+## Table of Contents
+- [Overview](#overview)
+- [Prerequisites](#prerequisites)
+- [Setup Instructions](#setup-instructions)
+  - [1. Clone the Repository](#1-clone-the-repository)
+  - [2. Install Dependencies](#2-install-dependencies)
+  - [3. Create Wallets](#3-create-wallets)
+  - [4. Register Wallets](#4-register-wallets)
+- [Running the Miner](#running-the-miner)
+- [Monitoring and Logging](#monitoring-and-logging)
+- [License](#license)
+
+---
+
+## Overview
+
+This is the process to install a vericore miner.
+
+The sample miner is integrated with perplexity and would require an API key within the environment as PERPLEXITY_API_KEY.
+
+## Prerequisites
+
+Before you begin, ensure you have the following installed:
+
+- Python 3.10 or higher (Currently 3.13 isn't supported in certain packages)
+- [Git](https://git-scm.com/)
+- [Bittensor SDK](https://github.com/opentensor/bittensor)
+  - Requirements for bittensor sdk includes Rust and Cargo
+
+## Setup Instructions
+
+### 1. Clone the Repository
+
+Clone this repository to your local machine:
+
+```bash
+git clone git@github.com:dfusionai/Vericore.git
+cd Vericore
+```
+
+### 2. Install Dependencies
+
+Install the required Python packages:
+
+> **Note**: It's recommended to use a virtual environment to manage dependencies.
+>
+#### Rust and Cargo
+
+Rust is the programming language used in Substrate development. Cargo is Rust package manager.
+
+Install rust and cargo:
+
+```bash
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+```
+
+Update your shell's source to include Cargo's path:
+```bash
+source "$HOME/.cargo/env"
+```
+
+#### Bittensor Cli
+
+```bash
+pip install bittensor
+```
+
+### 3. Create Wallets
+
+You'll need to create wallets for the miner.
+
+#### Using `btcli`
+
+The `btcli` tool is used to manage wallets and keys.
+
+1. **Create a Coldkey** (can be shared between miner and validator):
+
+   ```bash
+   btcli w new_coldkey --wallet.name mywallet
+   ```
+
+2. **Create Hotkeys**:
+
+   - **Miner Hotkey**:
+
+     ```bash
+     btcli w new_hotkey --wallet.name mywallet --wallet.hotkey miner_hotkey
+     ```
+
+### 4. Register Wallets
+
+Register the miner on the Bittensor network.
+
+- **Register the Miner**:
+
+  ```bash
+  btcli s register --wallet.name mywallet --wallet.hotkey miner_hotkey
+  ```
+
+> **Note**: If you're not connecting to the Mainnet, use the following to specify a different network:
+> ```bash
+>  --subtensor.chain_endpoint ws://127.0.0.1:9944`
+>  ```
+
+
+## Running the Miner
+
+In one terminal window, navigate to the project directory and run:
+
+```bash
+python -m miner.perplexity.miner --wallet.name bittensor --wallet.hotkey miner_hotkey --axon.ip=<EXTERNAL_IP> --axon.port 8901 --netuid 70
+```
+> **Note**: If you're not connecting to the Mainnet, use the following to specify a different network:
+> ```bash
+>  --subtensor.network ws://127.0.0.1:9944`
+>  ```
+
+
+**Arguments**:
+
+- `--wallet.name`: The name of the wallet.
+- `--wallet.hotkey`: The hotkey name for the miner.
+- `--subtensor.network`: The Bittensor network to connect to.
+- `--axon.ip`: The external ip address of the miner
+
+## Monitoring and Logging
+
+The miner will output logs to the console and save logs to files in the following directory structure:
+
+```
+~/.bittensor/wallets/<wallet.name>/<wallet.hotkey>/netuid<netuid>/miner/
+```
+
+- **Miner Logs**: Located in the `miner` directory.
+
+You can monitor these logs to observe the interactions and performance metrics.
+
+---
+
+## License
+
+This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
+
+---
+
+Feel free to contribute, raise issues, or suggest improvements to this template. Happy mining and validating on the Bittensor network!
