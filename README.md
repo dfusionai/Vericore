@@ -37,6 +37,8 @@ Vericore is a Bittensor subnet seeking to improve large-scale semantic fact-chec
 ```
 Vericore/
 ├── miner/
+    ├── perplexica/
+        └── miner.py         # Sample implementation of a naive miner using Perplexica
     ├── perplexity/
         └── miner.py         # Sample implementation of a naive miner using Perplexity
 ├── shared/
@@ -66,9 +68,9 @@ Before you begin, ensure you have the following installed:
 
 ### Setting up a validator or miner
 
-Instructions for installing and setting up a miner can be found in [Miner Installation](miner/readme)
+Instructions for installing and setting up a miner can be found in [Miner Installation](miner/readme.md)
 
-Instructions for installing and setting up a validator can be found in [Validator Installation](validator/readme)
+Instructions for installing and setting up a validator can be found in [Validator Installation](validator/readme.md)
 
 ### Register Wallets
 

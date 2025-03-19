@@ -92,7 +92,7 @@ Register the validator wallet on the Bittensor network.
 - **Register the Validator**:
 
   ```bash
-  btcli s register --wallet.name mywallet --wallet.hotkey validator_hotkey
+  btcli s register --wallet.name mywallet --wallet.hotkey validator_hotkey --netuid 70
   ```
 
 > **Note**: If you're not connecting to the Mainnet, use the following to specify a different network:
