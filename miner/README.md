@@ -8,6 +8,9 @@
   - [2. Install Dependencies](#2-install-dependencies)
   - [3. Create Wallets](#3-create-wallets)
   - [4. Register Wallets](#4-register-wallets)
+  - [5. Additional Requirements](#5-additional-requirements)
+    - [Perplexity](#perplexicity-miner)
+    - [Perplexica](#perplexica-miner)
 - [Running the Miner](#running-the-miner)
 - [Monitoring and Logging](#monitoring-and-logging)
 - [License](#license)
@@ -16,9 +19,14 @@
 
 ## Overview
 
-This is the process to install a vericore miner.
+## Overview
 
-The sample miner is integrated with perplexity and would require an API key within the environment as PERPLEXITY_API_KEY.
+This guide outlines the installation process for a Vericore miner.
+
+Two sample miners are provided:
+
+- **Perplexity Naive Miner** – Integrated with [Perplexity](https://www.perplexity.ai/)
+- **Perplexica Naive Miner** – Integrated with [Perplexica](https://github.com/ItzCrazyKns/Perplexica)
 
 ## Prerequisites
 
@@ -86,7 +94,7 @@ The `btcli` tool is used to manage wallets and keys.
    - **Miner Hotkey**:
 
      ```bash
-     btcli w new_hotkey --wallet.name mywallet --wallet.hotkey miner_hotkey
+     btcli w new_hotkey --wallet.name mywallet --wallet.hotkey miner_hotkey --netuid 70
      ```
 
 ### 4. Register Wallets
@@ -96,7 +104,7 @@ Register the miner on the Bittensor network.
 - **Register the Miner**:
 
   ```bash
-  btcli s register --wallet.name mywallet --wallet.hotkey miner_hotkey
+  btcli s register --wallet.name mywallet --wallet.hotkey miner_hotkey  --netuid 70
   ```
 
 > **Note**: If you're not connecting to the Mainnet, use the following to specify a different network:
@@ -104,6 +112,48 @@ Register the miner on the Bittensor network.
 >  --subtensor.chain_endpoint ws://127.0.0.1:9944`
 >  ```
 
+### 5. Additional Requirements
+
+#### Perplexity Miner
+
+**Perplexity** can be used to fetch the required information from the subnet. To use this miner, set the Perplexity API Key as an environment variable:
+
+```sh
+export PERPLEXITY_API_KEY=<your_api_key>
+```
+
+or on Windows
+
+```powershell
+$env:PERPLEXITY_API_KEY="<your_api_key>"
+```
+
+#### Perplexica Miner
+
+**Perplexica** is a required dependency for this Perplexica Miner. It must be installed locally before use.
+
+##### Installation
+Follow the installation instructions provided in the Perplexica repository:
+
+➡ [Installation Guide](https://github.com/ItzCrazyKns/Perplexica/blob/master/README.md#installation)
+
+##### Search Engine Endpoint
+The search engine endpoint is used to fetch the required information. More details can be found here:
+
+➡ [Search API Documentation](https://github.com/ItzCrazyKns/Perplexica/blob/master/docs/API/SEARCH.md)
+
+##### Configuration
+Set the Perplexica URL in your environment variables as follows:
+
+```sh
+export PERPLEXICA_URL=<your_perplexica_url>
+```
+
+or on Windows
+
+```powershell
+$env:PERPLEXICA_URL="<your_perplexica_url>"
+```
 
 ## Running the Miner
 

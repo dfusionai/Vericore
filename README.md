@@ -37,6 +37,8 @@ Vericore is a Bittensor subnet seeking to improve large-scale semantic fact-chec
 ```
 Vericore/
 ├── miner/
+    ├── perplexica/
+        └── miner.py         # Sample implementation of a naive miner using Perplexica
     ├── perplexity/
         └── miner.py         # Sample implementation of a naive miner using Perplexity
 ├── shared/
