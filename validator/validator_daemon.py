@@ -12,6 +12,8 @@ from shared.proxy_log_handler import register_proxy_log_handler
 
 from dotenv import load_dotenv
 
+from shared.store_response_handler import register_store_response, StoreJsonResponseHandler
+
 bt.logging.set_trace()
 
 load_dotenv()
@@ -59,8 +61,13 @@ def setup_logging(wallet, config):
     bt_logger = logging.getLogger("bittensor")
     register_proxy_log_handler(bt_logger, LoggerType.Validator, wallet)
 
+def send_json_response(store_response_handler: StoreJsonResponseHandler, json_data: dict):
+    if store_response_handler is not None:
+        print(f"Sending JSON response")
+        store_response_handler.send_json(json_data)
 
-def aggregate_results(results_dir, moving_scores):
+
+def aggregate_results(results_dir, moving_scores, store_response_handler: StoreJsonResponseHandler):
     """
     Scan the results directory for JSON files (each a query result), update moving_scores
     for each miner based on the reported final_score, then delete each processed file.
@@ -77,25 +84,29 @@ def aggregate_results(results_dir, moving_scores):
         try:
             with open(filepath, "r") as f:
                 result = json.load(f)
-            for res in result.get("results", []):
-                miner_uid = res.get("miner_uid")
-                final_score = res.get("final_score")
-                if miner_uid is not None and final_score is not None:
-                    calculated_score = (
-                        0.8 * moving_scores[miner_uid] + 0.2 * final_score
-                    )
-                    bt.logging.info(
-                        f"Moving score for uid: {miner_uid} and final score: {final_score} with calculated scored {calculated_score}"
-                    )
-                    moving_scores[miner_uid] = calculated_score
+                send_json_response(store_response_handler, result)
+
+                for res in result.get("results", []):
+                    miner_uid = res.get("miner_uid")
+                    final_score = res.get("final_score")
+                    if miner_uid is not None and final_score is not None:
+                        calculated_score = (
+                            0.8 * moving_scores[miner_uid] + 0.2 * final_score
+                        )
+                        bt.logging.info(
+                            f"Moving score for uid: {miner_uid} and final score: {final_score} with calculated scored {calculated_score}"
+                        )
+                        moving_scores[miner_uid] = calculated_score
+
+                # only delete the file if successfully processed data
+                try:
+                    os.remove(filepath)
+                    bt.logging.info(f"Deleted processed file {filepath}")
+                except Exception as e:
+                    bt.logging.error(f"Error deleting file {filepath}: {e}")
         except Exception as e:
             bt.logging.error(f"Error processing file {filepath}: {e}")
-        finally:
-            try:
-                os.remove(filepath)
-                bt.logging.info(f"Deleted processed file {filepath}")
-            except Exception as e:
-                bt.logging.error(f"Error deleting file {filepath}: {e}")
+
     return moving_scores
 
 
@@ -105,6 +116,7 @@ def main():
     setup_logging(wallet, config)
     results_dir = "results"
     os.makedirs(results_dir, exist_ok=True)
+    store_response_handler = register_store_response(wallet)
 
     tempo = subtensor.tempo(config.netuid)
     my_uid = metagraph.hotkeys.index(wallet.hotkey.ss58_address)
@@ -121,7 +133,7 @@ def main():
 
                 # create new moving scores array in case new miners have been loaded
                 moving_scores = [INITIAL_WEIGHT] * len(metagraph.S)
-                moving_scores = aggregate_results(results_dir, moving_scores)
+                moving_scores = aggregate_results(results_dir, moving_scores, store_response_handler)
 
                 bt.logging.info(f"Moving scores: {moving_scores}")
                 arr = np.array(moving_scores)
