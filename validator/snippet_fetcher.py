@@ -1,43 +1,54 @@
-# validator/snippet_fetcher.py
-from selenium import webdriver
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.chrome.service import Service
-from selenium.webdriver.chrome.webdriver import WebDriver
-from webdriver_manager.chrome import ChromeDriverManager
+import requests
+
+from bs4 import BeautifulSoup
+
 
 import bittensor as bt
 
-import logging
 
 class SnippetFetcher:
-    driver: WebDriver
-
-    def __init__(self):
-      bt.logging.info("SnippetFetcher.__init__")
-      self.chrome_options = Options()
-      self.chrome_options.add_argument("--no-proxy-server")
-      self.chrome_options.add_argument("--headless")
-      self.chrome_options.add_argument("--disable-cache")
-      self.service = Service(ChromeDriverManager().install())
-      # #todo - ask patrick whether timeout can be shorter that 2 minutes ( if the page doesn't exist - it shouldn't take more than 30 second? )
-      self.driver = webdriver.Chrome(service=self.service, options=self.chrome_options)
-
-    def __del__(self):
-      self.driver.quit()
 
     def fetch_entire_page(self, url: str) -> str:
       """
-      Pull the final rendered HTML (post-JS) using headless Chrome.
+      Pull the final rendered HTML (post-JS) using http request.
       Return it as a string.
       """
-      # self.driver = webdriver.Chrome(service=self.service, options=self.chrome_options)
+      headers = { "User-Agent": "Mozilla/5.0" }  # Mimic a real browser
+
+      bt.logging.info(f"Fetching url: {url}")
       try:
-          bt.logging.info(f"Fetching url: {url}")
-          self.driver.get(url)
-          page_source = self.driver.page_source
-          return page_source
+
+          response = requests.get(url, headers=headers)
+
+          bt.logging.info(f"Received response: {url}")
+
+          if response.status_code == 200:
+              soup = BeautifulSoup(response.text, "html.parser")
+
+              bt.logging.info(f"Cleaning html")
+
+              # Remove common ad elements
+              for tag in soup.find_all(["script", "iframe", "ins", "aside", "noscript"]):
+                  tag.decompose()  # Remove the tag from the DOM
+
+              clean_html = str(soup)
+              return clean_html
+          else:
+              bt.logging.error(f"Failed to fetch {url} - {response.status_code}: {response.text}")
+              return ""
       except Exception as e:
           bt.logging.error(f"Failed to fetch {url} - {e}")
           return ""
-      # finally:
-         # self.driver.quit()
+
+
+      # self.driver = webdriver.Chrome(service=self.service, options=self.chrome_options)
+      # try:
+      #     bt.logging.info(f"Fetching url: {url}")
+      #     self.driver.get(url)
+      #     page_source = self.driver.page_source
+      #     return page_source
+      # except Exception as e:
+      #     bt.logging.error(f"Failed to fetch {url} - {e}")
+      #     return ""
+      # # finally:
+      #    # self.driver.quit()
