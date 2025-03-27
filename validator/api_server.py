@@ -221,7 +221,16 @@ class APIQueryHandler:
             bt.logging.error(
                 f"{request_id} | {miner_uid} | Error fetching miner snippet {e}"
             )
-            return None
+            snippet_score = -1.0
+            vericore_miner_response = VericoreStatementResponse(
+                url=evid.url,
+                excerpt=evid.excerpt,
+                domain=domain,
+                snippet_found=False,
+                local_score=0.0,
+                snippet_score=snippet_score,
+            )
+            return vericore_miner_response
 
     async def process_miner_request(
         self,
