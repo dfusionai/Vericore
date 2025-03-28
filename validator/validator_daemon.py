@@ -123,6 +123,11 @@ def main():
                 moving_scores = [INITIAL_WEIGHT] * len(metagraph.S)
                 moving_scores = aggregate_results(results_dir, moving_scores)
 
+                if all(scores == 0 for scores in moving_scores):
+                    bt.logging.warning(f"Skipped setting of weights")
+                    # Don't update weights if  all moving scores are 0 otherwise it might rate the weights equally.
+                    continue
+
                 bt.logging.info(f"Moving scores: {moving_scores}")
                 arr = np.array(moving_scores)
                 exp_arr = np.exp(arr)
