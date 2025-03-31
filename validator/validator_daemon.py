@@ -125,6 +125,8 @@ def main():
 
                 if all(scores == 0 for scores in moving_scores):
                     bt.logging.warning(f"Skipped setting of weights")
+                    # Sleep for 5 seconds
+                    time.sleep(10)
                     # Don't update weights if  all moving scores are 0 otherwise it might rate the weights equally.
                     continue
 
@@ -140,6 +142,7 @@ def main():
                     weights=weights,
                     wait_for_inclusion=True,
                 )
+
             metagraph.sync()
             time.sleep(60)
         except KeyboardInterrupt:
