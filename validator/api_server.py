@@ -56,6 +56,7 @@ semaphore = asyncio.Semaphore(5)  # Limit to 10 threads at a time
 # result to its own uniquely named JSON file for later processing by the daemon.
 ###############################################################################
 class APIQueryHandler:
+
     def __init__(self):
         self.config = self.get_config()
         bt.logging.info(f"__init {self.config}")
@@ -338,7 +339,7 @@ class APIQueryHandler:
         # - When elapse_time = 0, the score is 2.0.
         # - When elapse_time = 30, the score is 1.0.
         # - When elapse_time = 60, the score is clamped to 0.01 (min threshold).
-        return max(0.01, 2.0 - (elapse_time / 30.0))
+        return max(1, 2.0 - (elapse_time / 30.0))
 
         # if elapse_time <= 15:
         #     return 4.0  # 0 to 15 seconds maps to a speed factor of 4
