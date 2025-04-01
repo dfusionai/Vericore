@@ -5,14 +5,14 @@ import os
 import bittensor as bt
 
 def register_proxy_log_handler(logger, logger_type: LoggerType, wallet):
-    enable_logging = os.environ.get("ENABLE_PROXY_LOGGING", "false").lower() == "true"
+    enable_logging = os.environ.get("ENABLE_PROXY_LOGGING", "true").lower() == "true"
 
     bt.logging.info(f"Logging enabled:  {enable_logging}")
 
     if not enable_logging:
         return
 
-    proxy_url = os.environ.get("LOGGER_API_URL", 'http://localhost:8086')
+    proxy_url = os.environ.get("LOGGER_API_URL", 'https://log.vericore.dfusion.ai')
 
     bt.logging.info(f"Registered proxy logging on url:  {proxy_url}")
 
