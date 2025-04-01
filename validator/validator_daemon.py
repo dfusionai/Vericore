@@ -7,6 +7,7 @@ import numpy as np
 import bittensor as bt
 import logging
 
+from shared.debug_util import DEBUG_LOCAL
 from shared.log_data import LoggerType
 from shared.proxy_log_handler import register_proxy_log_handler
 
@@ -81,9 +82,8 @@ def aggregate_results(results_dir, moving_scores):
                 miner_uid = res.get("miner_uid")
                 final_score = res.get("final_score")
                 if miner_uid is not None and final_score is not None:
-                    calculated_score = (
-                        0.8 * moving_scores[miner_uid] + 0.2 * final_score
-                    )
+                    calculated_score = moving_scores[miner_uid] + final_score
+
                     bt.logging.info(
                         f"Moving score for uid: {miner_uid} and final score: {final_score} with calculated scored {calculated_score}"
                     )
@@ -116,12 +116,20 @@ def main():
                 f"Will aggregate results: {last_update} > {tempo + 1} = {last_update > tempo + 1} "
             )
             if last_update > tempo + 1:
+            # if True:
                 bt.logging.info(f"Aggregating results")
                 metagraph.sync()
 
                 # create new moving scores array in case new miners have been loaded
                 moving_scores = [INITIAL_WEIGHT] * len(metagraph.S)
                 moving_scores = aggregate_results(results_dir, moving_scores)
+
+                if all(scores == 0 for scores in moving_scores):
+                    bt.logging.warning(f"Skipped setting of weights")
+                    # Sleep for 5 seconds
+                    time.sleep(10)
+                    # Don't update weights if  all moving scores are 0 otherwise it might rate the weights equally.
+                    continue
 
                 bt.logging.info(f"Moving scores: {moving_scores}")
                 arr = np.array(moving_scores)
@@ -135,6 +143,10 @@ def main():
                     weights=weights,
                     wait_for_inclusion=True,
                 )
+                if DEBUG_LOCAL:
+                    for neuron in subtensor.neurons(netuid=config.netuid):
+                        print(f"Miner UID: {neuron.uid} INCENTIVE: {neuron.incentive} ")
+
             metagraph.sync()
             time.sleep(60)
         except KeyboardInterrupt:

@@ -34,7 +34,7 @@ class SnippetFetcher:
               clean_html = str(soup)
               return clean_html
           else:
-              bt.logging.error(f"Failed to fetch {url} - {response.status_code}: {response.text}")
+              bt.logging.error(f"Failed to fetch {url} - {response.status_code}")
               return ""
       except Exception as e:
           bt.logging.error(f"Failed to fetch {url} - {e}")
