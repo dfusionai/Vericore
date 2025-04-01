@@ -7,6 +7,7 @@ import numpy as np
 import bittensor as bt
 import logging
 
+from shared.debug_util import DEBUG_LOCAL
 from shared.log_data import LoggerType
 from shared.proxy_log_handler import register_proxy_log_handler
 
@@ -114,8 +115,8 @@ def main():
             bt.logging.info(
                 f"Will aggregate results: {last_update} > {tempo + 1} = {last_update > tempo + 1} "
             )
-            # if last_update > tempo + 1:
-            if True:
+            if last_update > tempo + 1:
+            # if True:
                 bt.logging.info(f"Aggregating results")
                 metagraph.sync()
 
