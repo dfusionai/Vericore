@@ -81,9 +81,8 @@ def aggregate_results(results_dir, moving_scores):
                 miner_uid = res.get("miner_uid")
                 final_score = res.get("final_score")
                 if miner_uid is not None and final_score is not None:
-                    calculated_score = (
-                        0.8 * moving_scores[miner_uid] + 0.2 * final_score
-                    )
+                    calculated_score = moving_scores[miner_uid] + final_score
+
                     bt.logging.info(
                         f"Moving score for uid: {miner_uid} and final score: {final_score} with calculated scored {calculated_score}"
                     )
@@ -115,7 +114,8 @@ def main():
             bt.logging.info(
                 f"Will aggregate results: {last_update} > {tempo + 1} = {last_update > tempo + 1} "
             )
-            if last_update > tempo + 1:
+            # if last_update > tempo + 1:
+            if True:
                 bt.logging.info(f"Aggregating results")
                 metagraph.sync()
 
@@ -142,6 +142,9 @@ def main():
                     weights=weights,
                     wait_for_inclusion=True,
                 )
+                if DEBUG_LOCAL:
+                    for neuron in subtensor.neurons(netuid=config.netuid):
+                        print(f"Miner UID: {neuron.uid} INCENTIVE: {neuron.incentive} ")
 
             metagraph.sync()
             time.sleep(60)
