@@ -167,6 +167,7 @@ Response MUST returned as a json array. If it isn't returned as json object the 
                 bt.logging.warn(f"Perplexity returned no choices: {response}")
                 return []
             raw_text = response.choices[0].message.content.strip()
+            raw_text = raw_text.removeprefix("```json").removesuffix("```").strip()
 
             data = json.loads(raw_text)
             if not isinstance(data, list):
