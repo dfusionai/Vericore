@@ -5,10 +5,12 @@ from bs4 import BeautifulSoup
 
 import bittensor as bt
 
+from shared.http_helper import send_get_request
+
 
 class SnippetFetcher:
 
-    def fetch_entire_page(self, url: str) -> str:
+    async def fetch_entire_page(self, url: str) -> str:
       """
       Pull the final rendered HTML (post-JS) using http request.
       Return it as a string.
@@ -18,7 +20,7 @@ class SnippetFetcher:
       bt.logging.info(f"Fetching url: {url}")
       try:
 
-          response = requests.get(url, headers=headers)
+          response = await send_get_request(url, headers=headers) #requests.get(url, headers=headers)
 
           bt.logging.info(f"Received response: {url}")
 
