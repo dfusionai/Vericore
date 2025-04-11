@@ -48,8 +48,7 @@ UNREACHABLE_MINER_SCORE = -10
 NO_STATEMENTS_PROVIDED_SCORE = -5
 INVALID_RESPONSE_MINER_SCORE = -10
 
-semaphore = asyncio.Semaphore(5)  # Limit to 10 threads at a time
-
+semaphore = asyncio.Semaphore(10)  # Limit to 10 threads at a time
 
 ###############################################################################
 # APIQueryHandler: handles miner queries, scores responses, and writes each
@@ -58,6 +57,7 @@ semaphore = asyncio.Semaphore(5)  # Limit to 10 threads at a time
 class APIQueryHandler:
 
     def __init__(self):
+        self.semaphore_count = 0;
         self.config = self.get_config()
         bt.logging.info(f"__init {self.config}")
         self.setup_bittensor_objects()  # Creates dendrite, wallet, subtensor, metagraph only once.
@@ -144,8 +144,8 @@ class APIQueryHandler:
         veridex_response.elapse_time = elapsed
         return veridex_response
 
-    def process_miner_response(
-        self, request_id: str, miner_uid: str, evid, statement: str
+    async def process_miner_response(
+        self, request_id: str, miner_uid: int, evid, statement: str
     ):
         start_time = time.time()
         bt.logging.info(
@@ -172,7 +172,7 @@ class APIQueryHandler:
             bt.logging.info(f"{request_id} | {miner_uid} | Verifying Snippet")
 
             # Fetch page text
-            page_text = self._fetch_page_text(evid.url)
+            page_text = await self._fetch_page_text(evid.url)
 
             # Verify that the snippet is actually within the provided url
             # #todo - should we split score between url exists and whether the web-page does include the snippet
@@ -331,8 +331,17 @@ class APIQueryHandler:
         return None
 
     async def process_miner_response_with_limit(self, *args):
+        bt.logging.info(f'Waiting for semaphore: {self.semaphore_count}')
         async with semaphore:
-            return await asyncio.to_thread(self.process_miner_response, *args)
+            self.semaphore_count = self.semaphore_count + 1
+            bt.logging.info(f'Processing miner response: {self.semaphore_count}')
+            try:
+                response =  await self.process_miner_response(*args)
+                bt.logging.info(f'Completed miner response: {self.semaphore_count}')
+            finally:
+                self.semaphore_count = self.semaphore_count - 1
+
+            return response
 
     def calculate_speed_factor(self, elapse_time: float) -> float:
         # The speed factor decreases with elapse_time:
@@ -412,17 +421,21 @@ class APIQueryHandler:
             # Process Vericore response data
             bt.logging.info(f"{request_id} | {miner_uid} | Verifying Miner Statements")
 
-            vericore_statement_responses = await asyncio.gather(
-                *[
-                    self.process_miner_response_with_limit(
-                        request_id,
-                        miner_uid,
-                        miner_veridex_response,
-                        statement,
-                    )
-                    for miner_veridex_response in miner_response.synapse.veridex_response
-                ]
-            )
+            # vericore_statement_responses = await asyncio.gather(
+            #     *[
+            #         self.process_miner_response_with_limit(
+            #             request_id,
+            #             miner_uid,
+            #             miner_veridex_response,
+            #             statement,
+            #         )
+            #         for miner_veridex_response in miner_response.synapse.veridex_response
+            #     ]
+            # )
+            vericore_statement_responses = await asyncio.gather(*[
+                self.process_miner_response(request_id, miner_uid, miner_veridex_response, statement)
+                for miner_veridex_response in miner_response.synapse.veridex_response
+            ])
 
             bt.logging.info(f"{request_id} | {miner_uid} | Scoring Miner Statements")
 
@@ -498,7 +511,7 @@ class APIQueryHandler:
         """
         subset_neurons = self.select_miner_subset(k=NUMBER_OF_MINERS)
 
-        bt.logging.info(f"{request_id} | subset_neurons: {subset_neurons}")
+        bt.logging.info(f"{request_id} | subset_neurons")
 
         synapse = VericoreSynapse(
             statement=statement, sources=sources, request_id=request_id
@@ -600,10 +613,10 @@ class APIQueryHandler:
     #   except Exception:
     #       return False
 
-    def _fetch_page_text(self, url: str) -> str:
+    async def _fetch_page_text(self, url: str) -> str:
         try:
             fetcher = SnippetFetcher()
-            page_html = fetcher.fetch_entire_page(url)
+            page_html = await fetcher.fetch_entire_page(url)
 
             soup = BeautifulSoup(page_html, "html.parser")
 
