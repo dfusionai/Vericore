@@ -11,3 +11,5 @@ fuzzywuzzy
 sentence-transformers
 python-whois
 beautifulsoup4
+
+httpx[http2]
