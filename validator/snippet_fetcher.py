@@ -29,7 +29,7 @@ class SnippetFetcher:
         async with self.limiter:
            return await self.client.get(endpoint, timeout=REQUEST_TIMEOUT_SECONDS)
 
-    async def clean_html(self, url: str, html: str) -> str:
+    def clean_html(self, url: str, html: str) -> str:
         bt.logging.info(f"{url} | Cleaning html")
         soup = BeautifulSoup(html, "lxml")  # 5-10x faster than html.parser
 

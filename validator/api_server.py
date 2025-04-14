@@ -150,12 +150,11 @@ class APIQueryHandler:
     ):
         start_time = time.time()
         bt.logging.info(
-            f"{request_id} | {miner_uid} | Started miner response at {start_time}"
+            f"{request_id} | {miner_uid} | Started verifying miner response"
         )
         try:
             domain = self._extract_domain(evid.url)
 
-            bt.logging.info(f"{request_id} | {miner_uid} | Verifying miner statement ")
             snippet_str = evid.excerpt.strip()
             # snippet was not processed - Score: -1
             if not snippet_str:
@@ -619,14 +618,14 @@ class APIQueryHandler:
 
             page_html = await self.fetcher.fetch_entire_page(url)
 
-            # soup = BeautifulSoup(page_html, "html.parser")
-            #
-            # page_text = soup.getText(separator=" ", strip=True)
-
             if page_html is None:
                 return ""
 
-            return page_html
+            soup = BeautifulSoup(page_html, "html.parser")
+
+            page_text = await asyncio.to_thread(soup.getText, separator=" ", strip=True)
+
+            return page_text
 
         except Exception as e:
             logging.error(f"Error fetching page text in rendered page: {e}")
