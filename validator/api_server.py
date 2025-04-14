@@ -57,7 +57,6 @@ semaphore = asyncio.Semaphore(10)  # Limit to 10 threads at a time
 class APIQueryHandler:
 
     def __init__(self):
-        self.fetcher = SnippetFetcher()
         self.semaphore_count = 0;
         self.config = self.get_config()
         bt.logging.info(f"__init {self.config}")
@@ -73,7 +72,6 @@ class APIQueryHandler:
         self.quality_model = VeridexQualityModel()
         self.verify_quality_model = VerifyContextQualityModel()
         self.statement_generator = StatementGenerator()
-        self.fetcher = SnippetFetcher()
         # Directory to write individual result files (shared with the daemon)
         self.results_dir = "results"
         os.makedirs(self.results_dir, exist_ok=True)
@@ -616,7 +614,8 @@ class APIQueryHandler:
     async def _fetch_page_text(self, url: str) -> str:
         try:
 
-            page_html = await self.fetcher.fetch_entire_page(url)
+            fetcher = SnippetFetcher()
+            page_html = await fetcher.fetch_entire_page(url)
 
             if page_html is None:
                 return ""
