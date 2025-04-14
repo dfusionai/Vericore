@@ -12,4 +12,5 @@ sentence-transformers
 python-whois
 beautifulsoup4
 
+httpx
 httpx[http2]
