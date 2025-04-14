@@ -9,9 +9,7 @@ import bittensor as bt
 
 from shared.http_helper import send_get_request
 
-REQUEST_TIMEOUT_SECONDS = 60
-
-
+REQUEST_TIMEOUT_SECONDS = 20
 
 class SnippetFetcher:
 
@@ -24,9 +22,17 @@ class SnippetFetcher:
                 "User-Agent": "Mozilla/5.0" ,
                 "Accept-Encoding": "gzip, deflate"
             },
-            timeout=60.0  # Adjust as needed
+            timeout=REQUEST_TIMEOUT_SECONDS  # Adjust as needed
         )
-        self.limiter = AsyncLimiter(5, 1.0)  # 5 requests/second
+        self.limiter = AsyncLimiter(1, 10.0)  # 5 requests/second
+
+    # Implement async context manager methods
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb):
+        print("Snippet fetcher closing")
+        await self.client.aclose()
 
     async def send_get_request(self, endpoint: str) -> httpx.Response:
         async with self.limiter:
