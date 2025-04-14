@@ -1,3 +1,5 @@
+import datetime
+
 import requests
 
 from bs4 import BeautifulSoup
@@ -20,11 +22,15 @@ class SnippetFetcher:
       bt.logging.info(f"Fetching url: {url}")
       try:
 
-          response = await send_get_request(url, headers=headers) #requests.get(url, headers=headers)
-
-          bt.logging.info(f"Received response: {url}")
+          start_time = datetime.datetime.now()
+          try:
+            response = await send_get_request(url, headers=headers) #requests.get(url, headers=headers)
+          finally:
+              bt.logging.info(f"Received response: {url} : {response.status} : {datetime.datetime.now() - start_time}")
 
           if response.status_code == 200:
+              bt.logging.info(f"Passing to Beautiful soup for cleaning: {url}")
+
               soup = BeautifulSoup(response.text, "html.parser")
 
               bt.logging.info(f"Cleaning html")
@@ -41,7 +47,6 @@ class SnippetFetcher:
       except Exception as e:
           bt.logging.error(f"Failed to fetch {url} - {e}")
           return ""
-
 
       # self.driver = webdriver.Chrome(service=self.service, options=self.chrome_options)
       # try:
