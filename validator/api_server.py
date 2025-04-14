@@ -57,6 +57,7 @@ semaphore = asyncio.Semaphore(10)  # Limit to 10 threads at a time
 class APIQueryHandler:
 
     def __init__(self):
+        self.fetcher = SnippetFetcher()
         self.semaphore_count = 0;
         self.config = self.get_config()
         bt.logging.info(f"__init {self.config}")
@@ -615,16 +616,19 @@ class APIQueryHandler:
 
     async def _fetch_page_text(self, url: str) -> str:
         try:
-            fetcher = SnippetFetcher()
-            page_html = await fetcher.fetch_entire_page(url)
 
-            soup = BeautifulSoup(page_html, "html.parser")
+            page_html = await self.fetcher.fetch_entire_page(url)
 
-            page_text = soup.getText(separator=" ", strip=True)
+            # soup = BeautifulSoup(page_html, "html.parser")
+            #
+            # page_text = soup.getText(separator=" ", strip=True)
 
-            return page_text
+            if page_html is None:
+                return ""
 
-        except Exception:
+            return page_html
+
+        except Exception as e:
             logging.error(f"Error fetching page text in rendered page: {e}")
             return ""
 

@@ -23,9 +23,10 @@ class SnippetFetcher:
             headers={ "User-Agent": "Mozilla/5.0" },
             timeout=60.0  # Adjust as needed
         )
-        self.limiter = AsyncLimiter(10, 1.0)  # 10 requests/second
+        self.limiter = AsyncLimiter(5, 1.0)  # 5 requests/second
 
     async def send_get_request(self, endpoint: str) -> httpx.Response:
+        async with self.limiter:
             return await self.client.get(endpoint, timeout=REQUEST_TIMEOUT_SECONDS)
 
     async def clean_html(self, url: str, html: str) -> str:
@@ -40,34 +41,35 @@ class SnippetFetcher:
 
         return str(soup)
 
-    async def fetch_entire_page(self, url: str) -> str:
+    async def fetch_entire_page(self, url: str) -> str | None:
       """
       Pull the final rendered HTML (post-JS) using http request.
       Return it as a string.
       """
       # headers = { "User-Agent": "Mozilla/5.0" }  # Mimic a real browser
 
-      async with self.limiter:
-          bt.logging.info(f"Fetching url: {url}")
+      bt.logging.info(f"Fetching url: {url}")
+      try:
+          start_time = datetime.datetime.now()
           try:
-              start_time = datetime.datetime.now()
-              try:
-                response = await self.send_get_request(url) #requests.get(url, headers=headers)
-              finally:
-                bt.logging.info(f"Received response: {url} : {(datetime.datetime.now() - start_time).total_seconds()} seconds")
+            response = await self.send_get_request(url) #requests.get(url, headers=headers)
+          finally:
+            bt.logging.info(f"Received response: {url} : {(datetime.datetime.now() - start_time).total_seconds()} seconds")
 
-              if response.status_code != 200:
-                  bt.logging.error(f"Failed to fetch {url} - {response.status_code}")
-                  return ""
-
-              cleaned_html = await asyncio.to_thread(self.clean_html, url, response.text )
-
-              bt.logging.info(f"{url} | Fetched html | {(datetime.datetime.now() - start_time).total_seconds()} seconds")
-
-              return cleaned_html
-          except Exception as e:
-              bt.logging.error(f"Failed to fetch {url} - {e}")
+          if response.status_code != 200:
+              bt.logging.error(f"Failed to fetch {url} - {response.status_code}")
               return ""
+
+          cleaned_html: str = await asyncio.to_thread(self.clean_html, url, response.text )
+
+          bt.logging.info(f"{url} | Fetched html | {(datetime.datetime.now() - start_time).total_seconds()} seconds")
+
+          return cleaned_html
+      except Exception as e:
+          bt.logging.error(f"Failed to fetch {url} - {e}")
+          return ""
+
+      return ""
 
       # self.driver = webdriver.Chrome(service=self.service, options=self.chrome_options)
       # try:
