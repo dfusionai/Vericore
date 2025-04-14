@@ -26,7 +26,7 @@ class SnippetFetcher:
           try:
             response = await send_get_request(url, headers=headers) #requests.get(url, headers=headers)
           finally:
-              bt.logging.info(f"Received response: {url} : {response.status} : {datetime.datetime.now() - start_time}")
+              bt.logging.info(f"Received response: {url} : {response.status} : {(datetime.datetime.now() - start_time).total_seconds()} seconds" )
 
           if response.status_code == 200:
               bt.logging.info(f"Passing to Beautiful soup for cleaning: {url}")

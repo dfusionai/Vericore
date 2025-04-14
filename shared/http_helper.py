@@ -14,15 +14,15 @@ async def log_response(response):
 
 async def send_get_request(endpoint: str, headers: dict = None):
     async with httpx.AsyncClient(http2=True) as client:
-        client.event_hooks['request'] = [log_request]
-        client.event_hooks['response'] = [log_response]
+        # client.event_hooks['request'] = [log_request]
+        # client.event_hooks['response'] = [log_response]
         response = await client.get(endpoint, timeout=REQUEST_TIMEOUT_SECONDS, headers=headers )
         return response
 
 async def send_post_request(endpoint: str, json_data, headers: dict = None):
     async with httpx.AsyncClient(http2=True) as client:
-        client.event_hooks['request'] = [log_request]
-        client.event_hooks['response'] = [log_response]
+        # client.event_hooks['request'] = [log_request]
+        # client.event_hooks['response'] = [log_response]
         response = await client.post(endpoint, json=json_data, timeout=REQUEST_TIMEOUT_SECONDS, headers=headers)
         return response
 
