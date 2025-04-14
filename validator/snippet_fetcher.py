@@ -11,6 +11,8 @@ from shared.http_helper import send_get_request
 
 REQUEST_TIMEOUT_SECONDS = 60
 
+
+
 class SnippetFetcher:
 
 
@@ -26,8 +28,8 @@ class SnippetFetcher:
     async def send_get_request(self, endpoint: str) -> httpx.Response:
             return await self.client.get(endpoint, timeout=REQUEST_TIMEOUT_SECONDS)
 
-    async def clean_html(self, url: str, html :str) -> str:
-        bt.logging.info(f"{ url } | Cleaning html")
+    async def clean_html(self, url: str, html: str) -> str:
+        bt.logging.info(f"{url} | Cleaning html")
         soup = BeautifulSoup(html, "lxml")  # 5-10x faster than html.parser
 
         bt.logging.info(f"{url} | Decomposing  html")
@@ -58,7 +60,7 @@ class SnippetFetcher:
                   bt.logging.error(f"Failed to fetch {url} - {response.status_code}")
                   return ""
 
-              cleaned_html = await asyncio.to_thread(self.clean_html, response.text, )
+              cleaned_html = await asyncio.to_thread(self.clean_html, url, response.text )
 
               bt.logging.info(f"{url} | Fetched html | {(datetime.datetime.now() - start_time).total_seconds()} seconds")
 
