@@ -16,7 +16,7 @@ REQUEST_TIMEOUT_SECONDS = 60
 class SnippetFetcher:
 
 
-    def __int__(self):
+    def __init__(self):
         # Initialize a shared client once
         self.client = httpx.AsyncClient(
             http2=True,
@@ -26,8 +26,8 @@ class SnippetFetcher:
         self.limiter = AsyncLimiter(5, 1.0)  # 5 requests/second
 
     async def send_get_request(self, endpoint: str) -> httpx.Response:
-        # async with self.limiter:
-        return await self.client.get(endpoint, timeout=REQUEST_TIMEOUT_SECONDS)
+        async with self.limiter:
+           return await self.client.get(endpoint, timeout=REQUEST_TIMEOUT_SECONDS)
 
     async def clean_html(self, url: str, html: str) -> str:
         bt.logging.info(f"{url} | Cleaning html")
