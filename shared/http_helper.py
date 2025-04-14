@@ -6,11 +6,11 @@ import httpx
 REQUEST_TIMEOUT_SECONDS = 60
 
 def log_request(request):
-    bt.logging.info(f"{datetime.now} | {request.method} {request.url} ")
+    bt.logging.info(f"{datetime.datetime.now()} | {request.method} {request.url} ")
 
 def log_response(response):
     request = response.request
-    bt.logging.info(f"{datetime.now} | {request.method} {request.url} | STATUS CODE: {response.status_code}")
+    bt.logging.info(f"{datetime.datetime.now()} | {request.method} {request.url} | STATUS CODE: {response.status_code}")
 
 async def send_get_request(endpoint: str, headers: dict = None):
     async with httpx.AsyncClient(http2=True) as client:
