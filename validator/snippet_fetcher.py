@@ -51,7 +51,7 @@ class SnippetFetcher:
           try:
             response = await self.send_get_request(url) #requests.get(url, headers=headers)
           finally:
-              bt.logging.info(f"Received response: {url} : {response.status} : {(datetime.datetime.now() - start_time).total_seconds()} seconds" )
+            bt.logging.info(f"Received response: {url} : {(datetime.datetime.now() - start_time).total_seconds()} seconds")
 
           if response.status_code != 200:
               bt.logging.error(f"Failed to fetch {url} - {response.status_code}")
