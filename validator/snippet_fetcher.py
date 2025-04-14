@@ -20,7 +20,10 @@ class SnippetFetcher:
         # Initialize a shared client once
         self.client = httpx.AsyncClient(
             http2=True,
-            headers={ "User-Agent": "Mozilla/5.0" },
+            headers={
+                "User-Agent": "Mozilla/5.0" ,
+                "Accept-Encoding": "gzip, deflate"
+            },
             timeout=60.0  # Adjust as needed
         )
         self.limiter = AsyncLimiter(5, 1.0)  # 5 requests/second
