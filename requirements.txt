@@ -11,6 +11,7 @@ fuzzywuzzy
 sentence-transformers
 python-whois
 beautifulsoup4
+aiolimiter
 
 httpx
 httpx[http2]
