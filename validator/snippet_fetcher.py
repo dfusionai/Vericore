@@ -26,8 +26,8 @@ class SnippetFetcher:
         self.limiter = AsyncLimiter(5, 1.0)  # 5 requests/second
 
     async def send_get_request(self, endpoint: str) -> httpx.Response:
-        async with self.limiter:
-            return await self.client.get(endpoint, timeout=REQUEST_TIMEOUT_SECONDS)
+        # async with self.limiter:
+        return await self.client.get(endpoint, timeout=REQUEST_TIMEOUT_SECONDS)
 
     async def clean_html(self, url: str, html: str) -> str:
         bt.logging.info(f"{url} | Cleaning html")
@@ -68,8 +68,6 @@ class SnippetFetcher:
       except Exception as e:
           bt.logging.error(f"Failed to fetch {url} - {e}")
           return ""
-
-      return ""
 
       # self.driver = webdriver.Chrome(service=self.service, options=self.chrome_options)
       # try:
