@@ -419,21 +419,21 @@ class APIQueryHandler:
             # Process Vericore response data
             bt.logging.info(f"{request_id} | {miner_uid} | Verifying Miner Statements")
 
-            # vericore_statement_responses = await asyncio.gather(
-            #     *[
-            #         self.process_miner_response_with_limit(
-            #             request_id,
-            #             miner_uid,
-            #             miner_veridex_response,
-            #             statement,
-            #         )
-            #         for miner_veridex_response in miner_response.synapse.veridex_response
-            #     ]
-            # )
-            vericore_statement_responses = await asyncio.gather(*[
-                self.process_miner_response(request_id, miner_uid, miner_veridex_response, statement)
-                for miner_veridex_response in miner_response.synapse.veridex_response
-            ])
+            vericore_statement_responses = await asyncio.gather(
+                *[
+                    self.process_miner_response_with_limit(
+                        request_id,
+                        miner_uid,
+                        miner_veridex_response,
+                        statement,
+                    )
+                    for miner_veridex_response in miner_response.synapse.veridex_response
+                ]
+            )
+            # vericore_statement_responses = await asyncio.gather(*[
+            #     self.process_miner_response(request_id, miner_uid, miner_veridex_response, statement)
+            #     for miner_veridex_response in miner_response.synapse.veridex_response
+            # ])
 
             bt.logging.info(f"{request_id} | {miner_uid} | Scoring Miner Statements")
 
@@ -620,11 +620,7 @@ class APIQueryHandler:
             if page_html is None:
                 return ""
 
-            soup = BeautifulSoup(page_html, "html.parser")
-
-            page_text = await asyncio.to_thread(soup.getText, separator=" ", strip=True)
-
-            return page_text
+            return page_html
 
         except Exception as e:
             logging.error(f"Error fetching page text in rendered page: {e}")
