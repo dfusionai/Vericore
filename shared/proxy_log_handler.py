@@ -49,8 +49,8 @@ class ProxyLogHandler(logging.Handler):
             headers = {
                 'Content-Type': 'application/json',
                 'wallet': self.wallet.hotkey.ss58_address,
-                'signature': signature,
-                'type': self.logger_type,
+                'signature': signature
+                # , 'type': self.logger_type,
             }
             requests.post(self.proxy_url, json=json.dumps(log_entries), timeout=5, headers=headers)
         except requests.exceptions.RequestException as e:
