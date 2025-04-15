@@ -4,6 +4,7 @@ import random
 import argparse
 import asyncio
 import json
+import logging
 from typing import List
 
 from bittensor import NeuronInfo
@@ -60,10 +61,7 @@ class APIQueryHandler:
         self.refresh_miner_cache()
 
         self.my_uid = self.metagraph.hotkeys.index(self.wallet.hotkey.ss58_address)
-        # self.quality_model = VeridexQualityModel()
-        # self.verify_quality_model = VerifyContextQualityModel()
         self.statement_generator = StatementGenerator()
-        # self.fetcher = SnippetFetcher()
         # Directory to write individual result files (shared with the daemon)
         self.results_dir = "results"
         os.makedirs(self.results_dir, exist_ok=True)
@@ -94,8 +92,8 @@ class APIQueryHandler:
         bt.logging(config=self.config, logging_dir=self.config.full_path)
         bt.logging.info("Starting APIQueryHandler with config:")
         bt.logging.info(self.config)
-        # bt_logger = logging.getLogger("bittensor")
-        # register_proxy_log_handler(bt_logger, LoggerType.Validator, self.wallet)
+        bt_logger = logging.getLogger("bittensor")
+        register_proxy_log_handler(bt_logger, LoggerType.Validator, self.wallet)
 
     def setup_bittensor_objects(self):
         bt.logging.info("Setting up Bittensor objects for API Server.")
@@ -388,15 +386,20 @@ class APIQueryHandler:
         synapse = VericoreSynapse(
             statement=statement, sources=sources, request_id=request_id
         )
+        # responses = await asyncio.gather(
+        #     *[
+        #         asyncio.create_task(
+        #             self.process_miner_request(request_id, neuron, synapse, statement, is_test, is_nonsense)
+        #         )
+        #         for neuron in subset_neurons
+        #     ]
+        # )
         responses = await asyncio.gather(
             *[
-                asyncio.create_task(
-                    self.process_miner_request(request_id, neuron, synapse, statement, is_test, is_nonsense)
-                )
+                self.process_miner_request(request_id, neuron, synapse, statement, is_test, is_nonsense)
                 for neuron in subset_neurons
             ]
         )
-
         bt.logging.info(f"{request_id} | Processed Miner Request")
 
         response = VericoreQueryResponse(
