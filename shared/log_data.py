@@ -37,6 +37,9 @@ class LogEntry():
 
 class JSONFormatter(logging.Formatter):
     def format(self, record):
+        return self.to_dict(record)
+
+    def to_dict(self, record):
         log_entry = LogEntry(
             timestamp = record.created,
             logger = record.name,
@@ -46,4 +49,4 @@ class JSONFormatter(logging.Formatter):
             filename = record.filename,
             lineno = record.lineno
         )
-        return json.dumps(log_entry.to_dict())  # Convert to JSON string
+        return log_entry.to_dict()
