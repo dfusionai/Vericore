@@ -428,7 +428,8 @@ class APIQueryHandler:
             return neurons
 
         bt.logging.info("Determining miners")
-        return [n for n in neurons if not n.validator_permit]
+        # return [n for n in neurons if not n.validator_permit]
+        return [n for n in neurons]
 
     def refresh_miner_cache(self):
         current_time = time.time()
