@@ -1,6 +1,7 @@
 import torch
+import asyncio
+import threading
 from transformers import RobertaTokenizer, RobertaForSequenceClassification
-import bittensor as bt
 
 class VeridexQualityModel:
     """
@@ -26,7 +27,7 @@ class VeridexQualityModel:
     def score_pair_distrib(self, statement: str, snippet: str):
         """
         Compute the probability distribution over [contradiction, neutral, entailment].
-        
+
         Returns:
           probs: dict of {
               "contradiction": float,
@@ -41,7 +42,7 @@ class VeridexQualityModel:
         inputs = self.tokenizer(statement, snippet, return_tensors='pt',
                                 truncation=True, padding=True)
         inputs = {k: v.to(self.device) for k, v in inputs.items()}
-        
+
         with torch.no_grad():
             logits = self.model(**inputs).logits
             # logits.shape = [batch_size, 3]
@@ -91,3 +92,14 @@ class VeridexQualityModel:
 
         combined_score = total_score / len(snippet_texts)
         return combined_score, snippet_distributions
+
+
+verify_quality_model = VeridexQualityModel()
+model_lock = threading.Lock()
+
+async def score_statement_snippets(statement: str, snippet_texts: list) -> (float, list):
+    return await asyncio.to_thread(verify_quality_model.score_statement_snippets, statement, snippet_texts)
+
+async def score_statement_distribution(statement: str, snippet: str):
+    return await asyncio.to_thread(verify_quality_model.score_pair_distrib,statement, snippet)
+

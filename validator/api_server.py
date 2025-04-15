@@ -18,24 +18,17 @@ from shared.debug_util import DEBUG_LOCAL
 from shared.veridex_protocol import (
     VericoreSynapse,
     VeridexResponse,
-    VericoreStatementResponse,
     VericoreMinerStatementResponse,
     VericoreQueryResponse,
     SourceEvidence,
 )
 from shared.log_data import LoggerType
 from shared.proxy_log_handler import register_proxy_log_handler
-from validator.quality_model import VeridexQualityModel
-from validator.verify_context_quality_model import VerifyContextQualityModel
+from validator.snippet_validator import SnippetValidator
 from validator.active_tester import StatementGenerator
-from validator.snippet_fetcher import SnippetFetcher
-from validator.domain_validator import domain_is_recently_registered
 
 from dotenv import load_dotenv
-
 from dataclasses import asdict
-
-from bs4 import BeautifulSoup
 
 # debug
 bt.logging.set_trace()
@@ -43,13 +36,12 @@ bt.logging.set_trace()
 load_dotenv()
 
 REFRESH_INTERVAL_SECONDS = 60
-NUMBER_OF_MINERS = 5
+NUMBER_OF_MINERS = 3
 UNREACHABLE_MINER_SCORE = -10
 NO_STATEMENTS_PROVIDED_SCORE = -5
 INVALID_RESPONSE_MINER_SCORE = -10
 
 semaphore = asyncio.Semaphore(5)  # Limit to 10 threads at a time
-
 
 ###############################################################################
 # APIQueryHandler: handles miner queries, scores responses, and writes each
@@ -69,10 +61,7 @@ class APIQueryHandler:
         self.refresh_miner_cache()
 
         self.my_uid = self.metagraph.hotkeys.index(self.wallet.hotkey.ss58_address)
-        self.quality_model = VeridexQualityModel()
-        self.verify_quality_model = VerifyContextQualityModel()
         self.statement_generator = StatementGenerator()
-        self.fetcher = SnippetFetcher()
         # Directory to write individual result files (shared with the daemon)
         self.results_dir = "results"
         os.makedirs(self.results_dir, exist_ok=True)
@@ -143,112 +132,6 @@ class APIQueryHandler:
         veridex_response.synapse = response
         veridex_response.elapse_time = elapsed
         return veridex_response
-
-    def process_miner_response(
-        self, request_id: str, miner_uid: str, evid, statement: str
-    ):
-        start_time = time.time()
-        bt.logging.info(
-            f"{request_id} | {miner_uid} | Started miner response at {start_time}"
-        )
-        try:
-            domain = self._extract_domain(evid.url)
-
-            bt.logging.info(f"{request_id} | {miner_uid} | Verifying miner statement ")
-            snippet_str = evid.excerpt.strip()
-            # snippet was not processed - Score: -1
-            if not snippet_str:
-                snippet_score = -1.0
-                vericore_miner_response = VericoreStatementResponse(
-                    url=evid.url,
-                    excerpt=evid.excerpt,
-                    domain=domain,
-                    snippet_found=False,
-                    local_score=0.0,
-                    snippet_score=snippet_score,
-                )
-                return vericore_miner_response
-
-            bt.logging.info(f"{request_id} | {miner_uid} | Verifying Snippet")
-
-            # Fetch page text
-            page_text = self._fetch_page_text(evid.url)
-
-            # Verify that the snippet is actually within the provided url
-            # #todo - should we split score between url exists and whether the web-page does include the snippet
-            snippet_found = self._verify_snippet_in_rendered_page(
-                request_id, miner_uid, page_text, snippet_str
-            )
-
-            bt.logging.info(
-                f"{request_id} | {miner_uid} | Url: {evid.url} | Snippet: {snippet_str} | Snippet Verified:  {snippet_found}"
-            )
-
-            # Snippet was not found from the provided url
-            # #todo - should we penalise more for provided urls without the extracted snippet
-            if not snippet_found:
-                snippet_score = -1.0
-                vericore_miner_response = VericoreStatementResponse(
-                    url=evid.url,
-                    excerpt=evid.excerpt,
-                    domain=domain,
-                    snippet_found=False,
-                    local_score=0.0,
-                    snippet_score=snippet_score,
-                )
-                return vericore_miner_response
-
-            # Dont score if domain was registered within 30 days.
-            domain_registered_recently = domain_is_recently_registered(domain)
-            bt.logging.info(
-                f"{request_id} | {miner_uid} | Is domain registered recently: {domain_registered_recently}"
-            )
-            if domain_registered_recently:
-                snippet_score = -1.0
-                vericore_miner_response = VericoreStatementResponse(
-                    url=evid.url,
-                    excerpt=evid.excerpt,
-                    domain=domain,
-                    snippet_found=False,
-                    local_score=0.0,
-                    snippet_score=snippet_score,
-                )
-                return vericore_miner_response
-
-            probs, local_score = self.quality_model.score_pair_distrib(
-                statement, snippet_str
-            )
-            vericore_miner_response = VericoreStatementResponse(
-                url=evid.url,
-                excerpt=evid.excerpt,
-                domain=domain,
-                snippet_found=True,
-                domain_factor=0,
-                contradiction=probs["contradiction"],
-                neutral=probs["neutral"],
-                entailment=probs["entailment"],
-                local_score=local_score,
-                snippet_score=0,
-            )
-            end_time = time.time()
-            bt.logging.info(
-                f"{request_id} | {miner_uid} | Finished miner snippet at {end_time} (Duration: {end_time - start_time})"
-            )
-            return vericore_miner_response
-        except Exception as e:
-            bt.logging.error(
-                f"{request_id} | {miner_uid} | Error fetching miner snippet {e}"
-            )
-            snippet_score = -1.0
-            vericore_miner_response = VericoreStatementResponse(
-                url=evid.url,
-                excerpt=evid.excerpt,
-                domain=domain,
-                snippet_found=False,
-                local_score=0.0,
-                snippet_score=snippet_score,
-            )
-            return vericore_miner_response
 
     def verify_miner_connection(
         self,
@@ -330,9 +213,9 @@ class APIQueryHandler:
         # Valid statements returned
         return None
 
-    async def process_miner_response_with_limit(self, *args):
-        async with semaphore:
-            return await asyncio.to_thread(self.process_miner_response, *args)
+    # async def process_miner_response_with_limit(self, *args):
+    #     async with semaphore:
+    #         return await asyncio.to_thread(self.process_miner_response, *args)
 
     def calculate_speed_factor(self, elapse_time: float) -> float:
         # The speed factor decreases with elapse_time:
@@ -412,17 +295,17 @@ class APIQueryHandler:
             # Process Vericore response data
             bt.logging.info(f"{request_id} | {miner_uid} | Verifying Miner Statements")
 
-            vericore_statement_responses = await asyncio.gather(
-                *[
-                    self.process_miner_response_with_limit(
-                        request_id,
-                        miner_uid,
-                        miner_veridex_response,
-                        statement,
-                    )
-                    for miner_veridex_response in miner_response.synapse.veridex_response
-                ]
-            )
+            # Create tasks
+            validator = SnippetValidator()
+            tasks = [
+                validator.validate_miner_snippet(
+                    request_id,
+                    miner_uid,
+                    miner_vericore_response,
+                ) for miner_vericore_response in miner_response.synapse.veridex_response
+            ]
+
+            vericore_statement_responses = await asyncio.gather(*tasks)
 
             bt.logging.info(f"{request_id} | {miner_uid} | Scoring Miner Statements")
 
@@ -503,15 +386,20 @@ class APIQueryHandler:
         synapse = VericoreSynapse(
             statement=statement, sources=sources, request_id=request_id
         )
+        # responses = await asyncio.gather(
+        #     *[
+        #         asyncio.create_task(
+        #             self.process_miner_request(request_id, neuron, synapse, statement, is_test, is_nonsense)
+        #         )
+        #         for neuron in subset_neurons
+        #     ]
+        # )
         responses = await asyncio.gather(
             *[
-                asyncio.create_task(
-                    self.process_miner_request(request_id, neuron, synapse, statement, is_test, is_nonsense)
-                )
+                self.process_miner_request(request_id, neuron, synapse, statement, is_test, is_nonsense)
                 for neuron in subset_neurons
             ]
         )
-
         bt.logging.info(f"{request_id} | Processed Miner Request")
 
         response = VericoreQueryResponse(
@@ -540,7 +428,8 @@ class APIQueryHandler:
             return neurons
 
         bt.logging.info("Determining miners")
-        return [n for n in neurons if not n.validator_permit]
+        # return [n for n in neurons if not n.validator_permit]
+        return [n for n in neurons]
 
     def refresh_miner_cache(self):
         current_time = time.time()
@@ -586,64 +475,6 @@ class APIQueryHandler:
         if hotkey in self.metagraph.hotkeys:
             return self.metagraph.hotkeys.index(hotkey)
         return None
-
-    def _extract_domain(self, url: str) -> str:
-        if "://" in url:
-            parts = url.split("://", 1)[1].split("/", 1)
-            return parts[0].lower()
-        return url.lower()
-
-    # def _verify_snippet_in_rendered_page(self, url: str, snippet_text: str) -> bool:
-    #   try:
-    #       page_html = self.fetcher.fetch_entire_page(url)
-    #       return snippet_text in page_html
-    #   except Exception:
-    #       return False
-
-    def _fetch_page_text(self, url: str) -> str:
-        try:
-            fetcher = SnippetFetcher()
-            page_html = fetcher.fetch_entire_page(url)
-
-            soup = BeautifulSoup(page_html, "html.parser")
-
-            page_text = soup.getText(separator=" ", strip=True)
-
-            return page_text
-
-        except Exception:
-            logging.error(f"Error fetching page text in rendered page: {e}")
-            return ""
-
-    def _verify_snippet_in_rendered_page(
-        self, request_id: str, miner_uid: str, page_text: str, snippet_text: str
-    ) -> bool:
-        try:
-            return self.verify_quality_model.verify_context(snippet_text, page_text)
-
-            # tree = lxml.html.fromstring(page_html)
-        #
-        # # Perform fuzzy matching
-        # matches = [elem for elem in tree.xpath("//*[not(self::script or self::style)]") if fuzz.ratio(snippet_text, elem.text_content().strip()) > 80]
-        # if not matches:
-        #   bt.logging.info(f"{request_id} | url: {url} | No matches found using fuzzy ratio")
-        #   return False
-        #
-        # # Check whether the snippet does exist within the provided context
-        # for match in matches:
-        #   context = match.text_content().strip()
-        #   if self.verify_quality_model.verify_context(snippet_text, context):
-        #     bt.logging.info(f"{request_id} | url: {url} | FOUND snippet  within the page.")
-        #     return True
-        #
-        # bt.logging.info(f"{request_id} | url: {url} | CANNOT FIND snippet within the page")
-        # return False
-        except Exception as e:
-            logging.error(
-                f"{request_id} | {miner_uid} | Error verifying snippet in rendered page: {e}"
-            )
-            return False
-
 
 ###############################################################################
 # Set up FastAPI server
@@ -701,7 +532,7 @@ async def veridex_query(request: Request):
     start_time = time.time()
     result = await handler.handle_query(request_id, statement, sources)
     end_time = time.time()
-    print(
+    bt.logging.info(
         f"{request_id} | Finished processing at {end_time} (Duration: {end_time - start_time})"
     )
     return JSONResponse(asdict(result))
