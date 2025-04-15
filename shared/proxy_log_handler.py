@@ -6,7 +6,7 @@ import json
 import bittensor as bt
 from shared.log_data import LoggerType, JSONFormatter
 
-MAX_LOG_SIZE = 100
+MAX_LOG_SIZE = 500
 
 def register_proxy_log_handler(logger, logger_type: LoggerType, wallet):
     enable_logging = os.environ.get("ENABLE_PROXY_LOGGING", "true").lower() == "true"
