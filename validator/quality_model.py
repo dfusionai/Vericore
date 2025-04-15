@@ -98,10 +98,8 @@ verify_quality_model = VeridexQualityModel()
 model_lock = threading.Lock()
 
 async def score_statement_snippets(statement: str, snippet_texts: list) -> (float, list):
-  with model_lock:
-      return await asyncio.to_thread(verify_quality_model.score_statement_snippets, statement, snippet_texts)
+    return await asyncio.to_thread(verify_quality_model.score_statement_snippets, statement, snippet_texts)
 
 async def score_statement_distribution(statement: str, snippet: str):
-    with model_lock:
-        return await asyncio.to_thread(verify_quality_model.score_pair_distrib,statement, snippet)
+    return await asyncio.to_thread(verify_quality_model.score_pair_distrib,statement, snippet)
 

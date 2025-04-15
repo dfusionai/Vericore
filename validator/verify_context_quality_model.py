@@ -58,8 +58,7 @@ verify_quality_model = VerifyContextQualityModel()
 model_lock = threading.Lock()
 
 async def verify_context_quality(snippet_text: str, context_text: str) :
-  with model_lock:
-      return await asyncio.to_thread(verify_quality_model.verify_context, snippet_text, context_text)
+    return await asyncio.to_thread(verify_quality_model.verify_context, snippet_text, context_text)
 
 # Used for testing purposes
 if __name__ == "__main__":
