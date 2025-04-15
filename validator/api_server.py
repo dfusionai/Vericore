@@ -504,15 +504,20 @@ class APIQueryHandler:
         synapse = VericoreSynapse(
             statement=statement, sources=sources, request_id=request_id
         )
+        # responses = await asyncio.gather(
+        #     *[
+        #         asyncio.create_task(
+        #             self.process_miner_request(request_id, neuron, synapse, statement, is_test, is_nonsense)
+        #         )
+        #         for neuron in subset_neurons
+        #     ]
+        # )
         responses = await asyncio.gather(
             *[
-                asyncio.create_task(
-                    self.process_miner_request(request_id, neuron, synapse, statement, is_test, is_nonsense)
-                )
+                self.process_miner_request(request_id, neuron, synapse, statement, is_test, is_nonsense)
                 for neuron in subset_neurons
             ]
         )
-
         bt.logging.info(f"{request_id} | Processed Miner Request")
 
         response = VericoreQueryResponse(
