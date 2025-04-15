@@ -523,7 +523,8 @@ class APIQueryHandler:
             results=responses,
         )
         # Write the result to a uniquely named file for the daemon.
-        self.write_result_file(request_id, response)
+        # readd back after debugging complete
+        # self.write_result_file(request_id, response)
         return response
 
     def write_result_file(self, request_id: str, result: VericoreQueryResponse):
@@ -715,7 +716,8 @@ if __name__ == "__main__":
     uvicorn.run(
         "validator.api_server:app",
         host="0.0.0.0",
-        port=8080,
+        # port=8080, # change back to 8080
+        port=8081,
         reload=False,
         timeout_keep_alive=500,
         workers=1,
