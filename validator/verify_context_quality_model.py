@@ -2,6 +2,7 @@ import sys
 import bittensor as bt
 
 from sentence_transformers import SentenceTransformer, util
+import threading
 
 class VerifyContextQualityModel:
     """
@@ -47,6 +48,14 @@ class VerifyContextQualityModel:
 
         return best_score, best_score > threshold  # Return best match score and decision
 
+
+verify_quality_model = VerifyContextQualityModel()
+model_lock = threading.Lock()
+
+def verify_context_quality(snippet_text: str, context_text: str) :
+  with model_lock:
+      return verify_quality_model.verify_context(snippet_text, context_text)
+
 # Used for testing purposes
 if __name__ == "__main__":
     if len(sys.argv) < 3:
@@ -59,3 +68,6 @@ if __name__ == "__main__":
     score = model.verify_context(snippet, context)
 
     bt.logging.info("Match:", score )
+
+
+

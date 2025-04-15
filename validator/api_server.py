@@ -26,6 +26,7 @@ from shared.veridex_protocol import (
 from shared.log_data import LoggerType
 from shared.proxy_log_handler import register_proxy_log_handler
 from validator.quality_model import VeridexQualityModel
+from validator.snippet_validator import SnippetValidator
 from validator.verify_context_quality_model import VerifyContextQualityModel
 from validator.active_tester import StatementGenerator
 from validator.snippet_fetcher import SnippetFetcher
@@ -412,17 +413,17 @@ class APIQueryHandler:
             # Process Vericore response data
             bt.logging.info(f"{request_id} | {miner_uid} | Verifying Miner Statements")
 
-            vericore_statement_responses = await asyncio.gather(
-                *[
-                    self.process_miner_response_with_limit(
-                        request_id,
-                        miner_uid,
-                        miner_veridex_response,
-                        statement,
-                    )
-                    for miner_veridex_response in miner_response.synapse.veridex_response
-                ]
-            )
+            # Create tasks
+            validator = SnippetValidator()
+            tasks = [
+                validator.validate_miner_snippet(
+                    request_id,
+                    miner_uid,
+                    miner_vericore_response,
+                ) for miner_vericore_response in miner_response.synapse.veridex_response
+            ]
+
+            vericore_statement_responses = await asyncio.gather(*tasks)
 
             bt.logging.info(f"{request_id} | {miner_uid} | Scoring Miner Statements")
 

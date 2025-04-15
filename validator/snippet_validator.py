@@ -3,15 +3,14 @@ import bittensor as bt
 
 from shared.veridex_protocol import SourceEvidence, VericoreStatementResponse
 from validator.domain_validator import domain_is_recently_registered
-from validator.quality_model import VeridexQualityModel
+from validator.quality_model import score_statement_distribution
 from validator.snippet_fetcher import SnippetFetcher
-from validator.verify_context_quality_model import VerifyContextQualityModel
+from validator.verify_context_quality_model import verify_context_quality
+
 
 class SnippetValidator:
     def __init__(self):
         self.snippet_fetcher = SnippetFetcher()
-        self.verify_quality_model = VerifyContextQualityModel()
-        self.quality_model = VeridexQualityModel()
 
     def _extract_domain(self, url: str) -> str:
         if "://" in url:
@@ -36,9 +35,9 @@ class SnippetValidator:
         self, request_id: str, miner_uid: int, page_text: str, snippet_text: str
     ) -> bool:
         try:
-            return self.verify_quality_model.verify_context(snippet_text, page_text)
+            return verify_context_quality(snippet_text, page_text)
 
-            # tree = lxml.html.fromstring(page_html)
+        # tree = lxml.html.fromstring(page_html)
         #
         # # Perform fuzzy matching
         # matches = [elem for elem in tree.xpath("//*[not(self::script or self::style)]") if fuzz.ratio(snippet_text, elem.text_content().strip()) > 80]
@@ -135,7 +134,7 @@ class SnippetValidator:
                 )
                 return vericore_miner_response
 
-            probs, local_score = self.quality_model.score_pair_distrib(
+            probs, local_score = score_statement_distribution(
                 miner_evidence.excerpt, snippet_str
             )
             vericore_miner_response = VericoreStatementResponse(
