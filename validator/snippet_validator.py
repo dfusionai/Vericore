@@ -31,11 +31,11 @@ class SnippetValidator:
             bt.logging.error(f"{request_id} | {miner_uid} | Error fetching page text in rendered page: {e}")
             return ""
 
-    def _verify_snippet_in_rendered_page(
+    async def _verify_snippet_in_rendered_page(
         self, request_id: str, miner_uid: int, page_text: str, snippet_text: str
     ) -> bool:
         try:
-            return verify_context_quality(snippet_text, page_text)
+            return await verify_context_quality(snippet_text, page_text)
 
         # tree = lxml.html.fromstring(page_html)
         #
@@ -94,7 +94,7 @@ class SnippetValidator:
 
             # Verify that the snippet is actually within the provided url
             # #todo - should we split score between url exists and whether the web-page does include the snippet
-            snippet_found = self._verify_snippet_in_rendered_page(
+            snippet_found = await self._verify_snippet_in_rendered_page(
                 request_id, miner_uid, page_text, snippet_str
             )
 
@@ -134,7 +134,7 @@ class SnippetValidator:
                 )
                 return vericore_miner_response
 
-            probs, local_score = score_statement_distribution(
+            probs, local_score = await score_statement_distribution(
                 miner_evidence.excerpt, snippet_str
             )
             vericore_miner_response = VericoreStatementResponse(
