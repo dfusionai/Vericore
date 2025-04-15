@@ -367,34 +367,82 @@ class APIQueryHandler:
 
             bt.logging.info(f"{request_id} | { miner_uid } | Calling axon ")
 
-            # Call the miner
-            try:
-                miner_response = await self.call_axon(
-                    target_axon=neuron.axon_info, request_id=request_id, synapse=synapse
-                )
-            except Exception as e:
-                bt.logging.error(f"{request_id} | {miner_uid} | An error has occurred calling miner with error: {e}")
-                # exception could have been from us?
-                final_score = INVALID_RESPONSE_MINER_SCORE
-                miner_statement = VericoreMinerStatementResponse(
-                    miner_hotkey=miner_hotkey,
-                    miner_uid=miner_uid,
-                    status="no_response",
-                    raw_score=final_score,
-                    final_score=final_score,
-                )
-                return miner_statement
+            # # Call the miner
+            # try:
+            #     miner_response = await self.call_axon(
+            #         target_axon=neuron.axon_info, request_id=request_id, synapse=synapse
+            #     )
+            # except Exception as e:
+            #     bt.logging.error(f"{request_id} | {miner_uid} | An error has occurred calling miner with error: {e}")
+            #     # exception could have been from us?
+            #     final_score = INVALID_RESPONSE_MINER_SCORE
+            #     miner_statement = VericoreMinerStatementResponse(
+            #         miner_hotkey=miner_hotkey,
+            #         miner_uid=miner_uid,
+            #         status="no_response",
+            #         raw_score=final_score,
+            #         final_score=final_score,
+            #     )
+            #     return miner_statement
 
             bt.logging.info(
                 f"{request_id} | { miner_uid } | Received miner information"
             )
 
-            miner_statement = self.validate_miner_response(
-                miner_uid,
-                miner_hotkey,
-                request_id,
-                miner_response
-            )
+            evidences = [
+                SourceEvidence(
+                    url="https://science.nasa.gov/exoplanets/search-for-life/",
+                    excerpt="Our galaxy likely holds at least 100 billion planets, but so far, we have no evidence of life beyond Earth."
+                ),
+                SourceEvidence(
+                    url="https://www.seti.org/why-look-extraterrestrial-life",
+                    excerpt="Most researchers think there must be life elsewhere in the cosmos, and polls show that the public generally agrees."
+                ),
+                SourceEvidence(
+                    url="https://www.space.com/25325-fermi-paradox.html",
+                    excerpt="Discover the Fermi Paradox — why, in a vast universe full of stars and planets, haven't we found extraterrestrial life?"
+                ),
+                SourceEvidence(
+                    url="https://www.scientificamerican.com/article/how-many-aliens-are-in-the-milky-way-astronomers-turn-to-statistics-for-answers/",
+                    excerpt="The tenets of Thomas Bayes underpin the latest estimates of the prevalence of extraterrestrial life."
+                ),
+                SourceEvidence(
+                    url="https://www.nationalgeographic.com/astrobiology/",
+                    excerpt="Astrobiologist Kevin Hand prepares to deploy a rover beneath the ice of Alaska's Sukok Lake, modeling future searches for life on Europa."
+                ),
+                SourceEvidence(
+                    url="https://www.npr.org/2024/03/08/1237100622/pentagon-ufo-report-no-evidence-alien-technology",
+                    excerpt="The Pentagon says it found no evidence of extraterrestrial spacecraft in a new report reviewing nearly eight decades of UFO sightings."
+                ),
+                SourceEvidence(
+                    url="https://www.cnet.com/science/the-upcoming-pentagon-ufo-report-isnt-the-place-to-look-for-the-truth/",
+                    excerpt="UFOs are real but that doesn't mean we've been visited by aliens. The US government says there's no evidence."
+                ),
+                SourceEvidence(
+                    url="https://science.nasa.gov/universe/exoplanets/are-we-alone-in-the-universe-revisiting-the-drake-equation/",
+                    excerpt="Two researchers have revised the Drake equation, a mathematical formula for the probability of finding life or advanced civilizations in the universe."
+                ),
+                SourceEvidence(
+                    url="https://www.seti.org/event/search-life-beyond-earth-how-its-done-where-it-stands-and-why-it-matters",
+                    excerpt="SETI Institute CEO Bill Diamond describes the science behind the search for life beyond Earth and why it matters to humankind."
+                ),
+                SourceEvidence(
+                    url="https://www.space.com/fermi-paradox-aliens-contact-earth-not-interesting",
+                    excerpt="A new Fermi Paradox analysis suggests aliens haven't contacted Earth because we're not that interesting yet."
+                ),
+                SourceEvidence(
+                    url="https://science.nasa.gov/exoplanets/search-for-life/",
+                    excerpt="Our galaxy likely holds at least 100 billion planets, but so far, we have no evidence of life beyond Earth."
+                )
+            ]
+            # miner_response = synapse
+            # miner_response.synapse.veridex_response = evidences
+            # miner_statement = self.validate_miner_response(
+            #     miner_uid,
+            #     miner_hotkey,
+            #     request_id,
+            #     miner_response
+            # )
             if miner_statement is not None:
                 bt.logging.warning(
                     f"{request_id} | {miner_uid} | Invalid miner response received"
@@ -411,7 +459,7 @@ class APIQueryHandler:
                     request_id,
                     miner_uid,
                     miner_vericore_response,
-                ) for miner_vericore_response in miner_response.synapse.veridex_response
+                ) for miner_vericore_response in evidences
             ]
 
             vericore_statement_responses = await asyncio.gather(*tasks)
@@ -713,7 +761,7 @@ if __name__ == "__main__":
         "validator.api_server:app",
         host="0.0.0.0",
         # port=8080, # change back to 8080
-        port=8081,
+        port=8080,
         reload=False,
         timeout_keep_alive=500,
         workers=1,
