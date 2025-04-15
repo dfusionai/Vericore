@@ -1,4 +1,5 @@
 import torch
+import asyncio
 import threading
 from transformers import RobertaTokenizer, RobertaForSequenceClassification
 
@@ -96,11 +97,11 @@ class VeridexQualityModel:
 verify_quality_model = VeridexQualityModel()
 model_lock = threading.Lock()
 
-def score_statement_snippets(statement: str, snippet_texts: list) -> (float, list):
+async def score_statement_snippets(statement: str, snippet_texts: list) -> (float, list):
   with model_lock:
-      return verify_quality_model.score_statement_snippets(statement, snippet_texts)
+      return await asyncio.to_thread(verify_quality_model.score_statement_snippets, statement, snippet_texts)
 
-def score_statement_distribution(statement: str, snippet: str):
+async def score_statement_distribution(statement: str, snippet: str):
     with model_lock:
-        return verify_quality_model.score_pair_distrib(statement, snippet)
+        return await asyncio.to_thread(verify_quality_model.score_pair_distrib,statement, snippet)
 

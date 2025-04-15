@@ -1,3 +1,4 @@
+import asyncio
 import sys
 import bittensor as bt
 
@@ -37,14 +38,18 @@ class VerifyContextQualityModel:
 
         chunks = self.chunk_text(context_text, window_size=3)
 
-        # context_embedding = self.model.encode(context_text, convert_to_tensor=True)
+        chunk_embeddings = self.model.encode(chunks, convert_to_tensor=True)
 
+        similarities = util.pytorch_cos_sim(snippet_embedding, chunk_embeddings)
+        best_score = similarities.max().item()
+
+        # context_embedding = self.model.encode(context_text, convert_to_tensor=True)
         # Compare snippet against each chunk
-        best_score = 0
-        for chunk in chunks:
-           chunk_embedding = self.model.encode(chunk, convert_to_tensor=True)
-           similarity = util.pytorch_cos_sim(snippet_embedding, chunk_embedding).item()
-           best_score = max(best_score, similarity)  # Keep highest similarity
+        # best_score = 0
+        # for chunk in chunks:
+        #    chunk_embedding = self.model.encode(chunk, convert_to_tensor=True)
+        #    similarity = util.pytorch_cos_sim(snippet_embedding, chunk_embedding).item()
+        #    best_score = max(best_score, similarity)  # Keep highest similarity
 
         return best_score, best_score > threshold  # Return best match score and decision
 
@@ -52,9 +57,9 @@ class VerifyContextQualityModel:
 verify_quality_model = VerifyContextQualityModel()
 model_lock = threading.Lock()
 
-def verify_context_quality(snippet_text: str, context_text: str) :
+async def verify_context_quality(snippet_text: str, context_text: str) :
   with model_lock:
-      return verify_quality_model.verify_context(snippet_text, context_text)
+      return await asyncio.to_thread(verify_quality_model.verify_context, snippet_text, context_text)
 
 # Used for testing purposes
 if __name__ == "__main__":
