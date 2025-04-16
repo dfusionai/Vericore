@@ -39,6 +39,7 @@ class VericoreStatementResponse():
   snippet_found: bool
   local_score: float
   snippet_score: float
+  snippet_score_reason: str = ""
   domain_factor: float = 0
   contradiction: float = 0
   neutral: float = 0

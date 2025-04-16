@@ -299,15 +299,16 @@ class APIQueryHandler:
             validator = SnippetValidator()
             tasks = [
                 validator.validate_miner_snippet(
-                    request_id,
-                    miner_uid,
-                    miner_vericore_response,
+                    request_id=request_id,
+                    miner_uid=miner_uid,
+                    original_statement=miner_response.synapse.statement,
+                    miner_evidence=miner_vericore_response
                 ) for miner_vericore_response in miner_response.synapse.veridex_response
             ]
 
             vericore_statement_responses = await asyncio.gather(*tasks)
 
-            bt.logging.info(f"{request_id} | {miner_uid} | Scoring Miner Statements")
+            bt.logging.info(f"{request_id} | {miner_uid} | Scoring Miner Statements Based on Snippets")
 
             domain_counts = {}
             sum_of_snippets = 0.0
