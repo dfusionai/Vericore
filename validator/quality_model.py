@@ -1,3 +1,5 @@
+import argparse
+
 import torch
 import asyncio
 import threading
@@ -39,8 +41,13 @@ class VeridexQualityModel:
         Default formula:
             local_score = (prob_contra + prob_entail) - (prob_neutral)
         """
-        inputs = self.tokenizer(statement, snippet, return_tensors='pt',
-                                truncation=True, padding=True)
+        inputs = self.tokenizer(
+            text=snippet,        # premise/snippet
+            text_pair=statement, # hypothesis/statement
+            return_tensors='pt',
+            truncation=True,
+            padding=True
+        )
         inputs = {k: v.to(self.device) for k, v in inputs.items()}
 
         with torch.no_grad():
@@ -103,3 +110,23 @@ async def score_statement_snippets(statement: str, snippet_texts: list) -> (floa
 async def score_statement_distribution(statement: str, snippet: str):
     return await asyncio.to_thread(verify_quality_model.score_pair_distrib,statement, snippet)
 
+async def main(statement:str, snippet: str):
+    print(f"statement={statement}, snippet={snippet}")
+    result = await score_statement_distribution(statement, snippet)
+    print(result)
+
+
+# Used for testing purposes
+# run:
+# python -m quality_model --statement "Dinosaur existed" --snippet "Dinosaur existed in the Jurassic Period"
+# python -m validator.quality_model --statement "birds have feathers" --snippet "All birds have feathers and most can fly"
+# ({'contradiction': 0.6786971092224121, 'neutral': 0.3057457208633423, 'entailment': 0.015557228587567806}, 0.38850861694663763)
+# python -m validator.quality_model --statement "All birds have feathers" --snippet "Cats have tails"
+# ({'contradiction': 0.8573225736618042, 'neutral': 0.12920480966567993, 'entailment': 0.013472586870193481}, 0.7415903508663177)
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Run Quality Model.")
+    parser.add_argument("--statement", type=str, default="Dinosaur existed", help="Dinosaur existed")
+    parser.add_argument("--snippet", type=str, default="Dinosaur existed in the Jurassic Period", help="Dinosaur existed in the Jurassic Period")
+    args = parser.parse_args()
+
+    asyncio.run(main(args.statement, args.snippet))

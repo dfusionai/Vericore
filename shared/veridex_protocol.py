@@ -44,6 +44,8 @@ class VericoreStatementResponse():
   contradiction: float = 0
   neutral: float = 0
   entailment: float = 0
+  context_similarity_score:float=0
+  page_text: str = ""
 
 @dataclass
 class VericoreMinerStatementResponse():
@@ -62,4 +64,5 @@ class VericoreQueryResponse():
   request_id: str
   statement: str
   sources: list
+  total_elapsed_time: float = 0
   results: typing.List["VericoreMinerStatementResponse"] = field(default_factory=list)

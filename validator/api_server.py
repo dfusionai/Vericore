@@ -311,7 +311,6 @@ class APIQueryHandler:
             bt.logging.info(f"{request_id} | {miner_uid} | Scoring Miner Statements Based on Snippets")
 
             domain_counts = {}
-            sum_of_snippets = 0.0
 
             bt.logging.info(f"{request_id} | {miner_uid} | Calculating miner scores")
 
@@ -411,8 +410,7 @@ class APIQueryHandler:
             sources=sources,
             results=responses,
         )
-        # Write the result to a uniquely named file for the daemon.
-        self.write_result_file(request_id, response)
+
         return response
 
     def write_result_file(self, request_id: str, result: VericoreQueryResponse):
@@ -531,12 +529,17 @@ async def veridex_query(request: Request):
         raise HTTPException(status_code=400, detail="Missing 'statement'")
     request_id = f"req-{random.getrandbits(32):08x}"
     handler = app.state.handler
-    start_time = time.time()
-    result = await handler.handle_query(request_id, statement, sources)
-    end_time = time.time()
+    start_time = time.perf_counter()
+    result: VericoreQueryResponse = await handler.handle_query(request_id, statement, sources)
+    end_time = time.perf_counter()
+    duration = end_time - start_time
     bt.logging.info(
-        f"{request_id} | Finished processing at {end_time} (Duration: {end_time - start_time})"
+        f"{request_id} | Finished processing at {end_time} (Duration: {duration:.4f} seconds)"
     )
+    result.total_elapsed_time = duration
+
+    handler.write_result_file(request_id, result)
+
     return JSONResponse(asdict(result))
 
 
