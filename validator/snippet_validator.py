@@ -123,13 +123,11 @@ class SnippetValidator:
         start_time = time.perf_counter()
 
         bt.logging.info(
-            f"{request_id} | {miner_uid} | Verifying Miner Snippet"
+            f"{request_id} | {miner_uid} | {miner_evidence.url} | Verifying miner snippet"
         )
         try:
 
             domain = self._extract_domain(miner_evidence.url)
-
-            bt.logging.info(f"{request_id} | {miner_uid} | Verifying miner statement ")
             snippet_str = miner_evidence.excerpt.strip()
             # snippet was not processed - Score: -1
             if not snippet_str:
@@ -159,7 +157,7 @@ class SnippetValidator:
                 )
                 return vericore_miner_response
 
-            bt.logging.info(f"{request_id} | {miner_uid} | Verifying Snippet")
+            bt.logging.info(f"{request_id} | {miner_uid} | {miner_evidence.url} | Is snippet in same context as statement")
 
             is_same_context, context_score,  = await self.is_snippet_same_statement_context(
                 request_id, miner_uid, miner_evidence.url, original_statement, snippet_str
@@ -240,7 +238,7 @@ class SnippetValidator:
                 )
                 return vericore_miner_response
 
-
+            # Determine whether statement is neutral/corroborated or refuted
             probs, local_score = await score_statement_distribution(
                 statement=original_statement.strip(),
                 snippet=miner_evidence.excerpt
