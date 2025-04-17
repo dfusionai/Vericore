@@ -43,6 +43,10 @@ INVALID_RESPONSE_MINER_SCORE = -10
 
 semaphore = asyncio.Semaphore(5)  # Limit to 10 threads at a time
 
+
+LOWEST_FINAL_SCORE = -10
+HIGHEST_FINAL_SCORE = 10
+
 ###############################################################################
 # APIQueryHandler: handles miner queries, scores responses, and writes each
 # result to its own uniquely named JSON file for later processing by the daemon.
@@ -329,7 +333,9 @@ class APIQueryHandler:
                     statement_response.snippet_score = (
                         statement_response.local_score * domain_factor
                     )
-                    sum_of_snippets += statement_response.snippet_score
+
+                # Add score of all snippets
+                sum_of_snippets += statement_response.snippet_score
 
             # Calculate final score considering speed factor
             speed_factor = self.calculate_speed_factor(miner_response.elapse_time)
@@ -339,7 +345,7 @@ class APIQueryHandler:
             bt.logging.info(f"{request_id} | {miner_uid} | Final Score: {final_score} | Sum Of Snippets: {sum_of_snippets}")
             if is_test and is_nonsense and final_score > 0.5:
                 final_score -= 1.0
-            final_score = max(-3.0, min(3.0, final_score))
+            final_score = max(LOWEST_FINAL_SCORE, min(HIGHEST_FINAL_SCORE, final_score))
 
             bt.logging.info(f"{request_id} | {miner_uid} | Calculated Final Score: {final_score}")
 
