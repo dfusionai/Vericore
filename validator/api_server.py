@@ -318,19 +318,19 @@ class APIQueryHandler:
             # Check how many times the domain count was reused
             for statement_response in vericore_statement_responses:
                 if statement_response.snippet_found:
-                    times_used = domain_counts.get(statement_response.domain, 0)
-                    domain_counts[statement_response.domain] = times_used + 1
+                    domain_counts[statement_response.domain] = domain_counts.get(statement_response.domain, 0) + 1
 
             # Calculate the miner's statement score
+            sum_of_snippets = 0
             for statement_response in vericore_statement_responses:
                 if statement_response.snippet_found:
-                    times_used = domain_counts.get(statement_response.domain, 0)
+                    # Use times_used - 1 since we want first use to have no penalty
+                    times_used = domain_counts.get(statement_response.domain, 1) - 1
                     domain_factor = 1.0 / (2**times_used)
                     statement_response.snippet_score = (
                         statement_response.local_score * domain_factor
                     )
-
-                sum_of_snippets += statement_response.snippet_score
+                    sum_of_snippets += statement_response.snippet_score
 
             # Calculate final score considering speed factor
             speed_factor = self.calculate_speed_factor(miner_response.elapse_time)
@@ -350,6 +350,7 @@ class APIQueryHandler:
                 status="ok",
                 speed_factor=speed_factor,
                 final_score=final_score,
+                elapsed_time=miner_response.elapse_time,
                 vericore_responses=vericore_statement_responses,
             )
             return miner_statement
