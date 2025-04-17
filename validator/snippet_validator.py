@@ -14,6 +14,14 @@ from validator.verify_context_quality_model import verify_context_quality
 
 from shared.debug_util import DEBUG_LOCAL
 
+from shared.scores import (
+    NO_SNIPPET_PROVIDED,
+    SNIPPET_SAME_AS_STATEMENT,
+    COULD_NOT_GET_PAGE_TEXT_FROM_URL,
+    SNIPPET_NOT_VERIFIED_IN_URL,
+    DOMAIN_REGISTERED_RECENTLY
+)
+
 class SnippetValidator:
     def __init__(self):
         self.snippet_fetcher = SnippetFetcher()
@@ -65,9 +73,9 @@ class SnippetValidator:
         try:
             with open(filename, "w", encoding="utf-8") as f:
                 f.write(page_text)
-            bt.logging.info(f"Wrote result file: {filename}")
+            bt.logging.info(f"********** DEBUG ****: Wrote page output file: {filename}")
         except Exception as e:
-            bt.logging.error(f"Error writing result file {filename}: {e}")
+            bt.logging.error(f"********** DEBUG ****: Error writing page output file {filename}: {e}")
 
     async def _verify_snippet_in_rendered_page(
         self, request_id: str, miner_uid: int, page_text: str, snippet_text: str, url: str
@@ -131,7 +139,7 @@ class SnippetValidator:
             snippet_str = miner_evidence.excerpt.strip()
             # snippet was not processed - Score: -1
             if not snippet_str:
-                snippet_score = -1.0
+                snippet_score = NO_SNIPPET_PROVIDED
                 vericore_miner_response = VericoreStatementResponse(
                     url=miner_evidence.url,
                     excerpt=miner_evidence.excerpt,
@@ -145,7 +153,7 @@ class SnippetValidator:
 
             # if article is the same as the excerpt - Score: -5
             if snippet_str == original_statement.strip():
-                snippet_score = -5.0
+                snippet_score = SNIPPET_SAME_AS_STATEMENT
                 vericore_miner_response = VericoreStatementResponse(
                     url=miner_evidence.url,
                     excerpt=miner_evidence.excerpt,
@@ -182,7 +190,7 @@ class SnippetValidator:
 
             # Could not extract page text from url
             if page_text == '':
-                snippet_score = -1.0
+                snippet_score = COULD_NOT_GET_PAGE_TEXT_FROM_URL
                 vericore_miner_response = VericoreStatementResponse(
                     url=miner_evidence.url,
                     excerpt=miner_evidence.excerpt,
@@ -201,12 +209,12 @@ class SnippetValidator:
             )
 
             bt.logging.info(
-                f"{request_id} | {miner_uid} | {miner_evidence.url} | Snippet: {snippet_str} | Snippet Verified: {snippet_found}"
+                f"{request_id} | {miner_uid} | {miner_evidence.url} | Snippet Verified: {snippet_found}"
             )
 
             # Snippet was not found from the provided url:
             if not snippet_found:
-                snippet_score = -5.0
+                snippet_score = SNIPPET_NOT_VERIFIED_IN_URL
                 vericore_miner_response = VericoreStatementResponse(
                     url=miner_evidence.url,
                     excerpt=miner_evidence.excerpt,
@@ -223,10 +231,10 @@ class SnippetValidator:
             domain_registered_recently = await domain_is_recently_registered(domain)
 
             bt.logging.info(
-                f"{request_id} | {miner_uid} | Is domain registered recently: {domain_registered_recently}"
+                f"{request_id} | {miner_uid} | {miner_evidence.url} | Is domain registered recently: {domain_registered_recently}"
             )
             if domain_registered_recently:
-                snippet_score = -1.0
+                snippet_score = DOMAIN_REGISTERED_RECENTLY
                 vericore_miner_response = VericoreStatementResponse(
                     url=miner_evidence.url,
                     excerpt=miner_evidence.excerpt,

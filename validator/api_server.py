@@ -22,6 +22,11 @@ from shared.veridex_protocol import (
     VericoreQueryResponse,
     SourceEvidence,
 )
+from shared.scores import (
+    UNREACHABLE_MINER_SCORE,
+    INVALID_RESPONSE_MINER_SCORE,
+    NO_STATEMENTS_PROVIDED_SCORE
+)
 from shared.log_data import LoggerType
 from shared.proxy_log_handler import register_proxy_log_handler
 from validator.snippet_validator import SnippetValidator
@@ -37,9 +42,7 @@ load_dotenv()
 
 REFRESH_INTERVAL_SECONDS = 60
 NUMBER_OF_MINERS = 3
-UNREACHABLE_MINER_SCORE = -10
-NO_STATEMENTS_PROVIDED_SCORE = -5
-INVALID_RESPONSE_MINER_SCORE = -10
+
 
 semaphore = asyncio.Semaphore(5)  # Limit to 10 threads at a time
 
@@ -333,6 +336,7 @@ class APIQueryHandler:
                     statement_response.snippet_score = (
                         statement_response.local_score * domain_factor
                     )
+                    statement_response.domain_factor = domain_factor
 
                 # Add score of all snippets
                 sum_of_snippets += statement_response.snippet_score
@@ -355,6 +359,7 @@ class APIQueryHandler:
                 status="ok",
                 speed_factor=speed_factor,
                 final_score=final_score,
+                raw_score=sum_of_snippets,
                 elapsed_time=miner_response.elapse_time,
                 vericore_responses=vericore_statement_responses,
             )
@@ -388,7 +393,9 @@ class APIQueryHandler:
         """
         subset_neurons = self.select_miner_subset(k=NUMBER_OF_MINERS)
 
-        bt.logging.info(f"{request_id} | subset_neurons: {subset_neurons}")
+        miner_ids = [neuron.uid for neuron in subset_neurons]  # or neuron.uid
+        selected_miners = ' '.join(f'[{mid}]' for mid in miner_ids)
+        bt.logging.info(f"{request_id} | Selected miners: {selected_miners}")
 
         synapse = VericoreSynapse(
             statement=statement, sources=sources, request_id=request_id
@@ -407,7 +414,7 @@ class APIQueryHandler:
                 for neuron in subset_neurons
             ]
         )
-        bt.logging.info(f"{request_id} | Processed Miner Request")
+        bt.logging.info(f"{request_id} | Completed all miner requests")
 
         response = VericoreQueryResponse(
             status="ok",
@@ -424,7 +431,7 @@ class APIQueryHandler:
         try:
             with open(filename, "w") as f:
                 json.dump(asdict(result), f)
-            bt.logging.info(f"Wrote result file: {filename}")
+            bt.logging.info(f"{request_id} | Wrote result file: {filename}")
         except Exception as e:
             bt.logging.error(f"Error writing result file {filename}: {e}")
 
