@@ -54,10 +54,7 @@ class VerifyContextQualityModel:
         #    similarity = util.pytorch_cos_sim(snippet_embedding, chunk_embedding).item()
         #    best_score = max(best_score, similarity)  # Keep highest similarity
 
-        print (f"best score: {best_score}")
-
         return best_score > threshold, best_score   # Return best match score and decision
-
 
 verify_quality_model = VerifyContextQualityModel()
 model_lock = threading.Lock()
