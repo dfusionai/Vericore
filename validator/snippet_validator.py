@@ -3,6 +3,7 @@ import bittensor as bt
 import tldextract
 import ipaddress
 import re
+import os
 from urllib.parse import urlparse
 
 from shared.veridex_protocol import SourceEvidence, VericoreStatementResponse
@@ -57,11 +58,24 @@ class SnippetValidator:
             )
             return False
 
+    def write_file(self, request_id: str, page_text:str ):
+        output_dir = "output/"
+        os.makedirs(output_dir, exist_ok=True)
+        filename = os.path.join(output_dir, f"{request_id}_{time.thread_time()}.txt")
+        try:
+            with open(filename, "w", encoding="utf-8") as f:
+                f.write(page_text)
+            bt.logging.info(f"Wrote result file: {filename}")
+        except Exception as e:
+            bt.logging.error(f"Error writing result file {filename}: {e}")
+
     async def _verify_snippet_in_rendered_page(
         self, request_id: str, miner_uid: int, page_text: str, snippet_text: str, url: str
     ) -> bool:
         try:
             def normalize_text(text):
+                # Remove patterns like [ 1 ], [12], [ 123 ]
+                text = re.sub(r"\[\s*\d+\s*\]", '', text)
                 # Standardize quotes
                 text = re.sub(r'["“”‘’`´]', "'", text)
                 # Standardize dashes
@@ -77,6 +91,10 @@ class SnippetValidator:
             try:
                 normalized_snippet = normalize_text(snippet_text)
                 normalized_page = normalize_text(page_text)
+                if DEBUG_LOCAL:
+                    bt.logging.info(f"{request_id} | {miner_uid} | {url} | Normalised text:{normalized_snippet}")
+                    self.write_file(request_id, normalized_page)
+
                 if normalized_snippet in normalized_page:
                     bt.logging.info(f"{request_id} | {miner_uid} | {url} | Web page is EXACTLY the same as the snippet (normalized).")
                     return True
