@@ -54,6 +54,7 @@ class VericoreMinerStatementResponse():
   speed_factor: float = 0
   raw_score: float = 0
   final_score: float = 0
+  elapsed_time: float = 0
 
 @dataclass
 class VericoreQueryResponse():
