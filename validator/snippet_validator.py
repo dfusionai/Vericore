@@ -146,10 +146,9 @@ class SnippetValidator:
                 f"{request_id} | {miner_uid} | {miner_evidence.url} | Snippet: {snippet_str} | Snippet Verified: {snippet_found}"
             )
 
-            # Snippet was not found from the provided url
-            # #todo - should we penalise more for provided urls without the extracted snippet
+            # Snippet was not found from the provided url:
             if not snippet_found:
-                snippet_score = -1.0
+                snippet_score = -5.0
                 vericore_miner_response = VericoreStatementResponse(
                     url=miner_evidence.url,
                     excerpt=miner_evidence.excerpt,
@@ -176,6 +175,7 @@ class SnippetValidator:
                     snippet_found=False,
                     local_score=0.0,
                     snippet_score=snippet_score,
+                    snippet_score_reason="domain_is_recently_registered"
                 )
                 return vericore_miner_response
 
@@ -213,5 +213,6 @@ class SnippetValidator:
                 snippet_found=False,
                 local_score=0.0,
                 snippet_score=snippet_score,
+                snippet_score_reason="error_verifying_miner_snippet"
             )
             return vericore_miner_response
