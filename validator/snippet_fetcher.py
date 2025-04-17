@@ -106,7 +106,6 @@ class SnippetFetcher:
             bt.logging.info(
                 f"{request_id} | {miner_uid} | {url} | Fetched html | {duration:.4f} seconds"
             )
-            print(f"cleaned_html: {cleaned_html}")
             return cleaned_html
         except Exception as e:
             bt.logging.error(
