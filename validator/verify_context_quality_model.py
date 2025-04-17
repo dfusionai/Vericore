@@ -1,3 +1,4 @@
+import argparse
 import asyncio
 import sys
 import bittensor as bt
@@ -24,6 +25,7 @@ class VerifyContextQualityModel:
 
     def __init__(self):
         self.model = SentenceTransformer("all-MiniLM-L6-v2")  # Lightweight transformer
+        # self.model = SentenceTransformer('paraphrase-MiniLM-L6-v2')
 
     def chunk_text(self, text, window_size=3, step=1):
       """Split text into overlapping chunks of 'window_size' sentences."""
@@ -32,6 +34,7 @@ class VerifyContextQualityModel:
       return chunks
 
     def verify_context(self, snippet_text: str, context_text: str) :
+
         threshold = 0.75
         # Encode both texts
         snippet_embedding = self.model.encode(snippet_text, convert_to_tensor=True)
@@ -51,8 +54,7 @@ class VerifyContextQualityModel:
         #    similarity = util.pytorch_cos_sim(snippet_embedding, chunk_embedding).item()
         #    best_score = max(best_score, similarity)  # Keep highest similarity
 
-        return best_score, best_score > threshold  # Return best match score and decision
-
+        return best_score > threshold, best_score   # Return best match score and decision
 
 verify_quality_model = VerifyContextQualityModel()
 model_lock = threading.Lock()
@@ -60,18 +62,18 @@ model_lock = threading.Lock()
 async def verify_context_quality(snippet_text: str, context_text: str) :
     return await asyncio.to_thread(verify_quality_model.verify_context, snippet_text, context_text)
 
+async def main(snippet_text:str, context_text:str):
+    score = await verify_context_quality(snippet_text, context_text)
+
+    print(f"Match: {score}"  )
+
 # Used for testing purposes
 if __name__ == "__main__":
-    if len(sys.argv) < 3:
-      bt.logging.info("Usage: python similarity_check.py '<snippet>' '<context>'")
-      sys.exit(1)
+    parser = argparse.ArgumentParser(description="Run Quality Model.")
+    parser.add_argument("--statement", type=str, default="Dinosaur existed", help="Dinosaur existed")
+    parser.add_argument("--snippet", type=str, default="Dinosaur existed in the Jurassic Period", help="Dinosaur existed in the Jurassic Period")
+    args = parser.parse_args()
 
-    snippet = sys.argv[1]
-    context = sys.argv[2]
-    model = VerifyContextQualityModel()
-    score = model.verify_context(snippet, context)
-
-    bt.logging.info("Match:", score )
-
+    asyncio.run(main(args.statement, args.snippet))
 
 

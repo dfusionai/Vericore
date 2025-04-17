@@ -22,6 +22,11 @@ from shared.veridex_protocol import (
     VericoreQueryResponse,
     SourceEvidence,
 )
+from shared.scores import (
+    UNREACHABLE_MINER_SCORE,
+    INVALID_RESPONSE_MINER_SCORE,
+    NO_STATEMENTS_PROVIDED_SCORE
+)
 from shared.log_data import LoggerType
 from shared.proxy_log_handler import register_proxy_log_handler
 from validator.snippet_validator import SnippetValidator
@@ -37,11 +42,13 @@ load_dotenv()
 
 REFRESH_INTERVAL_SECONDS = 60
 NUMBER_OF_MINERS = 3
-UNREACHABLE_MINER_SCORE = -10
-NO_STATEMENTS_PROVIDED_SCORE = -5
-INVALID_RESPONSE_MINER_SCORE = -10
+
 
 semaphore = asyncio.Semaphore(5)  # Limit to 10 threads at a time
+
+
+LOWEST_FINAL_SCORE = -10
+HIGHEST_FINAL_SCORE = 10
 
 ###############################################################################
 # APIQueryHandler: handles miner queries, scores responses, and writes each
@@ -299,36 +306,39 @@ class APIQueryHandler:
             validator = SnippetValidator()
             tasks = [
                 validator.validate_miner_snippet(
-                    request_id,
-                    miner_uid,
-                    miner_vericore_response,
+                    request_id=request_id,
+                    miner_uid=miner_uid,
+                    original_statement=miner_response.synapse.statement,
+                    miner_evidence=miner_vericore_response
                 ) for miner_vericore_response in miner_response.synapse.veridex_response
             ]
 
             vericore_statement_responses = await asyncio.gather(*tasks)
 
-            bt.logging.info(f"{request_id} | {miner_uid} | Scoring Miner Statements")
+            bt.logging.info(f"{request_id} | {miner_uid} | Scoring Miner Statements Based on Snippets")
 
             domain_counts = {}
-            sum_of_snippets = 0.0
 
             bt.logging.info(f"{request_id} | {miner_uid} | Calculating miner scores")
 
             # Check how many times the domain count was reused
             for statement_response in vericore_statement_responses:
                 if statement_response.snippet_found:
-                    times_used = domain_counts.get(statement_response.domain, 0)
-                    domain_counts[statement_response.domain] = times_used + 1
+                    domain_counts[statement_response.domain] = domain_counts.get(statement_response.domain, 0) + 1
 
             # Calculate the miner's statement score
+            sum_of_snippets = 0
             for statement_response in vericore_statement_responses:
                 if statement_response.snippet_found:
-                    times_used = domain_counts.get(statement_response.domain, 0)
+                    # Use times_used - 1 since we want first use to have no penalty
+                    times_used = domain_counts.get(statement_response.domain, 1) - 1
                     domain_factor = 1.0 / (2**times_used)
                     statement_response.snippet_score = (
                         statement_response.local_score * domain_factor
                     )
+                    statement_response.domain_factor = domain_factor
 
+                # Add score of all snippets
                 sum_of_snippets += statement_response.snippet_score
 
             # Calculate final score considering speed factor
@@ -339,7 +349,7 @@ class APIQueryHandler:
             bt.logging.info(f"{request_id} | {miner_uid} | Final Score: {final_score} | Sum Of Snippets: {sum_of_snippets}")
             if is_test and is_nonsense and final_score > 0.5:
                 final_score -= 1.0
-            final_score = max(-3.0, min(3.0, final_score))
+            final_score = max(LOWEST_FINAL_SCORE, min(HIGHEST_FINAL_SCORE, final_score))
 
             bt.logging.info(f"{request_id} | {miner_uid} | Calculated Final Score: {final_score}")
 
@@ -349,6 +359,8 @@ class APIQueryHandler:
                 status="ok",
                 speed_factor=speed_factor,
                 final_score=final_score,
+                raw_score=sum_of_snippets,
+                elapsed_time=miner_response.elapse_time,
                 vericore_responses=vericore_statement_responses,
             )
             return miner_statement
@@ -381,7 +393,9 @@ class APIQueryHandler:
         """
         subset_neurons = self.select_miner_subset(k=NUMBER_OF_MINERS)
 
-        bt.logging.info(f"{request_id} | subset_neurons: {subset_neurons}")
+        miner_ids = [neuron.uid for neuron in subset_neurons]  # or neuron.uid
+        selected_miners = ' '.join(f'[{mid}]' for mid in miner_ids)
+        bt.logging.info(f"{request_id} | Selected miners: {selected_miners}")
 
         synapse = VericoreSynapse(
             statement=statement, sources=sources, request_id=request_id
@@ -400,7 +414,7 @@ class APIQueryHandler:
                 for neuron in subset_neurons
             ]
         )
-        bt.logging.info(f"{request_id} | Processed Miner Request")
+        bt.logging.info(f"{request_id} | Completed all miner requests")
 
         response = VericoreQueryResponse(
             status="ok",
@@ -409,8 +423,7 @@ class APIQueryHandler:
             sources=sources,
             results=responses,
         )
-        # Write the result to a uniquely named file for the daemon.
-        self.write_result_file(request_id, response)
+
         return response
 
     def write_result_file(self, request_id: str, result: VericoreQueryResponse):
@@ -418,7 +431,7 @@ class APIQueryHandler:
         try:
             with open(filename, "w") as f:
                 json.dump(asdict(result), f)
-            bt.logging.info(f"Wrote result file: {filename}")
+            bt.logging.info(f"{request_id} | Wrote result file: {filename}")
         except Exception as e:
             bt.logging.error(f"Error writing result file {filename}: {e}")
 
@@ -529,12 +542,17 @@ async def veridex_query(request: Request):
         raise HTTPException(status_code=400, detail="Missing 'statement'")
     request_id = f"req-{random.getrandbits(32):08x}"
     handler = app.state.handler
-    start_time = time.time()
-    result = await handler.handle_query(request_id, statement, sources)
-    end_time = time.time()
+    start_time = time.perf_counter()
+    result: VericoreQueryResponse = await handler.handle_query(request_id, statement, sources)
+    end_time = time.perf_counter()
+    duration = end_time - start_time
     bt.logging.info(
-        f"{request_id} | Finished processing at {end_time} (Duration: {end_time - start_time})"
+        f"{request_id} | Finished processing at {end_time} (Duration: {duration:.4f} seconds)"
     )
+    result.total_elapsed_time = duration
+
+    handler.write_result_file(request_id, result)
+
     return JSONResponse(asdict(result))
 
 

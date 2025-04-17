@@ -16,8 +16,16 @@ class SnippetFetcher:
     def __init__(self):
         # Initialize a shared client once
         self.client = httpx.AsyncClient(
+            follow_redirects=True,
             http2=True,
-            headers={"User-Agent": "Mozilla/5.0", "Accept-Encoding": "gzip, deflate"},
+            headers={
+                "User-Agent":(
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "Chrome/122.0.0.0 Safari/537.36"
+                ),
+                "Accept-Encoding": "gzip, deflate"
+            },
             timeout=REQUEST_TIMEOUT_SECONDS,  # Adjust as needed
         )
         self.limiter = AsyncLimiter(1, 10.0)  # 5 requests/second
@@ -52,7 +60,7 @@ class SnippetFetcher:
         except Exception as e:
             duration = time.perf_counter() - start
             bt.logging.warning(
-                f"{request_id} | {miner_uid} | {endpoint} | | Error {e} | {duration:.4f} seconds"
+                f"{request_id} | {miner_uid} | {endpoint} | Error {e} | {duration:.4f} seconds"
             )
 
     async def clean_html(
@@ -98,7 +106,6 @@ class SnippetFetcher:
             bt.logging.info(
                 f"{request_id} | {miner_uid} | {url} | Fetched html | {duration:.4f} seconds"
             )
-
             return cleaned_html
         except Exception as e:
             bt.logging.error(

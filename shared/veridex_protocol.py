@@ -39,10 +39,13 @@ class VericoreStatementResponse():
   snippet_found: bool
   local_score: float
   snippet_score: float
+  snippet_score_reason: str = ""
   domain_factor: float = 0
   contradiction: float = 0
   neutral: float = 0
   entailment: float = 0
+  context_similarity_score:float=0
+  page_text: str = ""
 
 @dataclass
 class VericoreMinerStatementResponse():
@@ -53,6 +56,7 @@ class VericoreMinerStatementResponse():
   speed_factor: float = 0
   raw_score: float = 0
   final_score: float = 0
+  elapsed_time: float = 0
 
 @dataclass
 class VericoreQueryResponse():
@@ -60,4 +64,5 @@ class VericoreQueryResponse():
   request_id: str
   statement: str
   sources: list
+  total_elapsed_time: float = 0
   results: typing.List["VericoreMinerStatementResponse"] = field(default_factory=list)
