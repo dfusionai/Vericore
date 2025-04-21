@@ -11,6 +11,11 @@ from shared.debug_util import DEBUG_LOCAL
 from shared.log_data import LoggerType
 from shared.proxy_log_handler import register_proxy_log_handler
 
+from validator.weights_utils import (
+    process_weights_for_netuid,
+    convert_weights_and_uids_for_emit,
+)
+
 from dotenv import load_dotenv
 
 bt.logging.set_trace()
@@ -134,15 +139,43 @@ def main():
                 bt.logging.info(f"Moving scores: {moving_scores}")
                 arr = np.array(moving_scores)
                 exp_arr = np.exp(arr)
-                weights = (exp_arr / np.sum(exp_arr)).tolist()
+                raw_weights = (exp_arr / np.sum(exp_arr)).tolist()
+                # Process the raw weights to final_weights via subtensor limitations.
+                (
+                    processed_weight_uids,
+                    processed_weights,
+                ) = process_weights_for_netuid(
+                    uids=metagraph.uids,
+                    weights=raw_weights,
+                    netuid=config.netuid,
+                    subtensor=subtensor,
+                    metagraph=metagraph,
+                )
+                bt.logging.debug("processed_weights", processed_weights)
+                bt.logging.debug("processed_weight_uids", processed_weight_uids)
+
+                # Convert to uint16 weights and uids.
+                (
+                    uint_uids,
+                    uint_weights,
+                ) = convert_weights_and_uids_for_emit(
+                    uids=processed_weight_uids, weights=processed_weights
+                )
+                bt.logging.debug("uint_weights", uint_weights)
+                bt.logging.debug("uint_uids", uint_uids)
                 bt.logging.info(f"Setting weights on chain: {weights}")
-                subtensor.set_weights(
+                result, msg = subtensor.set_weights(
                     netuid=config.netuid,
                     wallet=wallet,
-                    uids=metagraph.uids,
-                    weights=weights,
-                    wait_for_inclusion=True,
+                    uids=uint_uids,
+                    weights=uint_weights,
+                    wait_for_finalization=False,
+                    wait_for_inclusion=False
                 )
+                if result is True:
+                    bt.logging.info("set_weights on chain successfully!")
+                else:
+                    bt.logging.error("set_weights failed", msg)
                 if DEBUG_LOCAL:
                     for neuron in subtensor.neurons(netuid=config.netuid):
                         print(f"Miner UID: {neuron.uid} INCENTIVE: {neuron.incentive} ")
