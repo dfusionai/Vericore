@@ -132,9 +132,11 @@ def main():
                     continue
 
                 bt.logging.info(f"Moving scores: {moving_scores}")
-                arr = np.array(moving_scores)
-                exp_arr = np.exp(arr)
-                weights = (exp_arr / np.sum(exp_arr)).tolist()
+                arr = np.array(moving_scores, dtype=np.float32)
+                scale   = 8.0
+                deltas  = arr.max() - arr
+                exp_dec = np.exp(-deltas / scale)
+                weights = ((exp_dec / exp_dec.sum())*65535).tolist()
                 bt.logging.info(f"Setting weights on chain: {weights}")
                 subtensor.set_weights(
                     netuid=config.netuid,
