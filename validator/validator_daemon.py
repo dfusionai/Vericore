@@ -152,7 +152,7 @@ def main():
             )
             if last_update > tempo + 1:
             # if True:
-                bt.logging.info(f"Aggregating results")
+                bt.logging.info(f"DAEMON | Aggregating results")
                 metagraph.sync()
 
                 # create new moving scores array in case new miners have been loaded
