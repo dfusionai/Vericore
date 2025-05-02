@@ -41,11 +41,9 @@ bt.logging.set_trace()
 load_dotenv()
 
 REFRESH_INTERVAL_SECONDS = 60
-NUMBER_OF_MINERS = 10
-
+NUMBER_OF_MINERS = 5
 
 semaphore = asyncio.Semaphore(5)  # Limit to 10 threads at a time
-
 
 LOWEST_FINAL_SCORE = -10
 HIGHEST_FINAL_SCORE = 10
