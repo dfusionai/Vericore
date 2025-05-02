@@ -60,9 +60,12 @@ class VericoreMinerStatementResponse():
 
 @dataclass
 class VericoreQueryResponse():
+  validator_hotkey: str
+  validator_uid: int
   status: str
   request_id: str
   statement: str
   sources: list
+  timestamp: float =0
   total_elapsed_time: float = 0
   results: typing.List["VericoreMinerStatementResponse"] = field(default_factory=list)
