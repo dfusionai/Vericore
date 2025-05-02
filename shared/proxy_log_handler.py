@@ -1,3 +1,4 @@
+import atexit
 import threading
 import logging
 import requests
@@ -7,6 +8,8 @@ import bittensor as bt
 from shared.log_data import LoggerType, JSONFormatter
 
 MAX_LOG_SIZE = 500
+
+proxy_handler = None
 
 def register_proxy_log_handler(logger, logger_type: LoggerType, wallet):
     enable_logging = os.environ.get("ENABLE_PROXY_LOGGING", "true").lower() == "true"
@@ -27,6 +30,9 @@ def register_proxy_log_handler(logger, logger_type: LoggerType, wallet):
     proxy_handler.setFormatter(JSONFormatter())
     logger.addHandler(proxy_handler)
 
+    atexit.register(proxy_handler.cleanup)
+
+
 
 class ProxyLogHandler(logging.Handler):
     """Custom log handler to send logs to a proxy server ."""
@@ -38,6 +44,7 @@ class ProxyLogHandler(logging.Handler):
         self.wallet = wallet
         self.logging_cache = []
         self.cache_lock = threading.Lock()
+
 
     def send_log(self, log_entries: []):
         try:
@@ -68,3 +75,10 @@ class ProxyLogHandler(logging.Handler):
     def emit(self, json_data):
         log_entry = self.format(json_data)
         self.add_log_entry_to_cache(log_entry)
+
+    def cleanup(self):
+        print("Cleaning up log")
+        with self.cache_lock:
+            self.send_log(self.logging_cache)
+            self.logging_cache = []
+
