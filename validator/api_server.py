@@ -43,7 +43,6 @@ load_dotenv()
 REFRESH_INTERVAL_SECONDS = 60
 NUMBER_OF_MINERS = 3
 
-
 semaphore = asyncio.Semaphore(5)  # Limit to 10 threads at a time
 
 
@@ -418,6 +417,8 @@ class APIQueryHandler:
 
         response = VericoreQueryResponse(
             status="ok",
+            validator_uid=self.my_uid,
+            validator_hotkey=self.wallet.hotkey.ss58_address,
             request_id=request_id,
             statement=statement,
             sources=sources,
@@ -541,6 +542,7 @@ async def veridex_query(request: Request):
     if not statement:
         raise HTTPException(status_code=400, detail="Missing 'statement'")
     request_id = f"req-{random.getrandbits(32):08x}"
+    timestamp = time.time()
     handler = app.state.handler
     start_time = time.perf_counter()
     result: VericoreQueryResponse = await handler.handle_query(request_id, statement, sources)
@@ -549,6 +551,7 @@ async def veridex_query(request: Request):
     bt.logging.info(
         f"{request_id} | Finished processing at {end_time} (Duration: {duration:.4f} seconds)"
     )
+    result.timestamp = timestamp
     result.total_elapsed_time = duration
 
     handler.write_result_file(request_id, result)
