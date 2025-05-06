@@ -6,6 +6,7 @@ import re
 import os
 from urllib.parse import urlparse
 
+from shared.top_level_domain_cache import is_valid_domain
 from shared.veridex_protocol import SourceEvidence, VericoreStatementResponse
 from validator.domain_validator import domain_is_recently_registered
 from validator.quality_model import score_statement_distribution
@@ -19,7 +20,7 @@ from shared.scores import (
     SNIPPET_SAME_AS_STATEMENT,
     COULD_NOT_GET_PAGE_TEXT_FROM_URL,
     SNIPPET_NOT_VERIFIED_IN_URL,
-    DOMAIN_REGISTERED_RECENTLY
+    DOMAIN_REGISTERED_RECENTLY, INVALID_DOMAIN_USED
 )
 
 class SnippetValidator:
@@ -29,7 +30,6 @@ class SnippetValidator:
     def _extract_domain(self, url: str) -> str:
         parsed = urlparse(url)
         hostname = parsed.hostname
-
         try:
             # Check if it's an IP address
             ipaddress.ip_address(hostname)
@@ -134,8 +134,22 @@ class SnippetValidator:
             f"{request_id} | {miner_uid} | {miner_evidence.url} | Verifying miner snippet"
         )
         try:
-
             domain = self._extract_domain(miner_evidence.url)
+
+            # check if snippet comes from verified domain
+            if not is_valid_domain(request_id, miner_uid, domain):
+                snippet_score = INVALID_DOMAIN_USED
+                vericore_miner_response = VericoreStatementResponse(
+                    url=miner_evidence.url,
+                    excerpt=miner_evidence.excerpt,
+                    domain=domain,
+                    snippet_found=False,
+                    local_score=0.0,
+                    snippet_score=snippet_score,
+                    snippet_score_reason="invalid_domain"
+                )
+                return vericore_miner_response
+
             snippet_str = miner_evidence.excerpt.strip()
             # snippet was not processed - Score: -1
             if not snippet_str:

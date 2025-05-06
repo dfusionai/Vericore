@@ -2,9 +2,10 @@ import json
 from dataclasses import asdict
 
 import requests
-import os
+
 import bittensor as bt
 
+from shared.environment_variables import DASHBOARD_API_URL
 from shared.validator_results_data import ValidatorResultsData
 from shared.log_data import LoggerType
 
@@ -45,13 +46,13 @@ class ValidatorResultsDataHandler:
 def register_validator_results_data_handler(
     validator_uid: int, wallet: str
 ) -> ValidatorResultsDataHandler:
-    proxy_url = os.environ.get("DASHBOARD_API_URL", "https://dashboard.vericore.dfusion.ai")
+    dashboard_api_url = DASHBOARD_API_URL
 
-    bt.logging.info(f"Registered STORE JSON logging on url:  {proxy_url}")
+    bt.logging.info(f"Registered STORE JSON logging on url:  {dashboard_api_url}")
 
     # Use the actual Bittensor logger
     store_results_handler = ValidatorResultsDataHandler(
-        proxy_url, validator_uid, wallet
+        dashboard_api_url, validator_uid, wallet
     )
 
     return store_results_handler
