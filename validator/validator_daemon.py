@@ -2,12 +2,13 @@ import os
 import time
 import json
 import argparse
+import random
+import shutil
 import traceback
 import numpy as np
 import bittensor as bt
 import logging
 from typing import List
-from shared.debug_util import DEBUG_LOCAL
 from shared.log_data import LoggerType
 from shared.proxy_log_handler import register_proxy_log_handler
 from shared.store_results_handler import (
@@ -68,15 +69,18 @@ def setup_logging(wallet, config):
 
 def send_validator_response_data(
     store_response_handler: ValidatorResultsDataHandler,
+    unique_id: str,
+    has_summary_data: bool,
     vericore_responses: List[dict],
     moving_scores: List[float],
     weights: List[float],
     incentives: List[float],
 ):
-
     if store_response_handler is not None:
         bt.logging.info(f"Sending validator response data: {weights}, {incentives}")
         validator_response_data = ValidatorResultsData()
+        validator_response_data.unique_id = unique_id
+        validator_response_data.has_summary_data = has_summary_data
         validator_response_data.timestamp = time.time()
         validator_response_data.vericore_responses = vericore_responses
         validator_response_data.moving_scores = moving_scores
@@ -84,17 +88,76 @@ def send_validator_response_data(
         validator_response_data.incentives = incentives
         store_response_handler.send_json(validator_response_data)
 
-
-def aggregate_results(results_dir, moving_scores):
+def send_results(unique_id: str, results_dir: str, destination_dir: str, validator_results_data_handler: ValidatorResultsDataHandler):
     """
     Scan the results directory for JSON files (each a query result), update moving_scores
     for each miner based on the reported final_score, then delete each processed file.
     """
     files = [
-        os.path.join(results_dir, f)
+        {
+            "filepath": os.path.join(results_dir, f),
+            "filename": f
+        }
         for f in os.listdir(results_dir)
         if f.endswith(".json")
     ]
+    if not files:
+        return None
+
+    vericore_responses = []
+
+    bt.logging.info(f"DAEMON | Processing vericore responses")
+    for file_dto in files:
+        try:
+
+            with open(file_dto["filepath"], "r") as f:
+                result = json.load(f)
+                vericore_responses.append(result)
+        except Exception as e:
+            bt.logging.error(f"DAEMON | Error processing file {file_dto["filepath"]}: {e}")
+            return None
+
+    if len(vericore_responses) > 0:
+        # Send
+        bt.logging.info(f"DAEMON | Sending vericore responses")
+        send_validator_response_data(
+            validator_results_data_handler,
+            unique_id,
+            False,
+            vericore_responses,
+            [],
+            [],
+            [],
+        )
+
+    bt.logging.info(f"DAEMON | Moving files")
+    for filepath in files:
+        try:
+            sourceFile = filepath["filepath"]
+            destinationFile = os.path.join(destination_dir, filepath["filename"])
+
+            shutil.move(sourceFile, destinationFile)
+        except Exception as e:
+            bt.logging.error(f"DAEMON | Error processing file {filepath}: {e}")
+            return None
+
+    bt.logging.info(f"DAEMON | Moved files")
+
+    return vericore_responses
+
+def list_json_files(directory):
+    return [
+        os.path.join(directory, f)
+        for f in os.listdir(directory)
+        if f.endswith(".json")
+    ]
+
+def aggregate_results(results_dir, processed_results_dir, moving_scores):
+    """
+    Scan the results directory for JSON files (each a query result), update moving_scores
+    for each miner based on the reported final_score, then delete each processed file.
+    """
+    files = list_json_files(results_dir) + list_json_files(processed_results_dir)
     if not files:
         return moving_scores, None
 
@@ -133,8 +196,13 @@ def main():
     config = get_config()
     wallet, subtensor, metagraph = setup_bittensor_objects(config)
     setup_logging(wallet, config)
-    results_dir = "results"
-    os.makedirs(results_dir, exist_ok=True)
+
+    output_dir = "results"
+    os.makedirs(output_dir, exist_ok=True)
+
+    processed_results_dir = "result_processed"
+    os.makedirs(processed_results_dir, exist_ok=True)
+
     my_uid = metagraph.hotkeys.index(wallet.hotkey.ss58_address)
 
     validator_results_data_handler = register_validator_results_data_handler(
@@ -142,7 +210,7 @@ def main():
     )
 
     tempo = subtensor.tempo(config.netuid)
-
+    unique_id = f"{my_uid}-{random.getrandbits(64):16x}"
     bt.logging.info("DAEMON | Starting Validator Daemon loop.")
     while True:
         try:
@@ -150,15 +218,17 @@ def main():
             bt.logging.info(
                 f"DAEMON | Will aggregate results: {last_update} > {tempo + 1} = {last_update > tempo + 1} "
             )
-            if last_update > tempo + 1:
-            # if True:
+            # if last_update > tempo + 1:
+            if True:
                 bt.logging.info(f"DAEMON | Aggregating results")
                 metagraph.sync()
 
                 # create new moving scores array in case new miners have been loaded
                 moving_scores = [INITIAL_WEIGHT] * len(metagraph.S)
                 moving_scores, vericore_responses = aggregate_results(
-                    results_dir, moving_scores
+                    output_dir,
+                    processed_results_dir,
+                    moving_scores
                 )
 
                 bt.logging.info(f"DAEMON | Moving scores: {moving_scores}")
@@ -194,13 +264,25 @@ def main():
 
                 send_validator_response_data(
                     validator_results_data_handler,
+                    unique_id,
+                    True,
                     vericore_responses,
                     moving_scores,
                     weights,
                     incentives,
                 )
+                # reset unique id
+                unique_id = f"{my_uid}-{random.getrandbits(32):16x}"
+            else:
+                send_results(
+                    unique_id,
+                    results_dir=output_dir,
+                    destination_dir=processed_results_dir,
+                    validator_results_data_handler=validator_results_data_handler,
+                )
 
             metagraph.sync()
+
             time.sleep(60)
         except KeyboardInterrupt:
             bt.logging.info(f"DAEMON | Validator Daemon interrupted. Exiting.")
