@@ -114,7 +114,7 @@ def send_results(unique_id: str, results_dir: str, destination_dir: str, validat
                 result = json.load(f)
                 vericore_responses.append(result)
         except Exception as e:
-            bt.logging.error(f"DAEMON | Error processing file {file_dto["filepath"]}: {e}")
+            bt.logging.error(f"DAEMON | Error processing file {file_dto['filepath']}: {e}")
             return None
 
     if len(vericore_responses) > 0:
