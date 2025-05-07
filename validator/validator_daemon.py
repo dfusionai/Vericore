@@ -226,8 +226,8 @@ def main():
             bt.logging.info(
                 f"DAEMON | Will aggregate results: {last_update} > {tempo + 1} = {last_update > tempo + 1} "
             )
-            # if last_update > tempo + 1:
-            if True:
+            if last_update > tempo + 1:
+            # if True:
                 bt.logging.info(f"DAEMON | Aggregating results")
                 metagraph.sync()
 
