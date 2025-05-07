@@ -80,7 +80,7 @@ def send_validator_response_data(
     incentives: List[float],
 ):
     if store_response_handler is not None:
-        bt.logging.info(f"DAEMON | {validator_uid} | block number: {block_number} | Sending validator response data: {weights}, {incentives}")
+        bt.logging.info(f"DAEMON | {validator_uid} | block number: {block_number}")
         validator_response_data = ValidatorResultsData()
         validator_response_data.validator_uid = validator_uid
         validator_response_data.validator_hotkey = validator_hotkey
