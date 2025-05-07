@@ -69,8 +69,10 @@ def setup_logging(wallet, config):
 
 def send_validator_response_data(
     store_response_handler: ValidatorResultsDataHandler,
+    validator_uid: int,
+    validator_hotkey: str,
     unique_id: str,
-     block_number: int,
+    block_number: int,
     has_summary_data: bool,
     vericore_responses: List[dict],
     moving_scores: List[float],
@@ -78,8 +80,10 @@ def send_validator_response_data(
     incentives: List[float],
 ):
     if store_response_handler is not None:
-        bt.logging.info(f"DAEMON | block number: {block_number} | Sending validator response data: {weights}, {incentives}")
+        bt.logging.info(f"DAEMON | {validator_uid} | block number: {block_number} | Sending validator response data: {weights}, {incentives}")
         validator_response_data = ValidatorResultsData()
+        validator_response_data.validator_uid = validator_uid
+        validator_response_data.validator_hotkey = validator_hotkey
         validator_response_data.block_number = block_number
         validator_response_data.unique_id = unique_id
         validator_response_data.has_summary_data = has_summary_data
@@ -90,7 +94,15 @@ def send_validator_response_data(
         validator_response_data.incentives = incentives
         store_response_handler.send_json(validator_response_data)
 
-def send_results(unique_id: str, block_number: int, results_dir: str, destination_dir: str, validator_results_data_handler: ValidatorResultsDataHandler):
+def send_results(
+    unique_id: str,
+    validator_uid: int,
+    validator_hotkey: str,
+    block_number: int,
+    results_dir: str,
+    destination_dir: str,
+    validator_results_data_handler: ValidatorResultsDataHandler
+):
     """
     Scan the results directory for JSON files (each a query result), update moving_scores
     for each miner based on the reported final_score, then delete each processed file.
@@ -108,7 +120,7 @@ def send_results(unique_id: str, block_number: int, results_dir: str, destinatio
 
     vericore_responses = []
 
-    bt.logging.info(f"DAEMON | Processing vericore responses")
+    bt.logging.info(f"DAEMON | {validator_uid} | Processing vericore responses")
     for file_dto in files:
         try:
 
@@ -116,24 +128,26 @@ def send_results(unique_id: str, block_number: int, results_dir: str, destinatio
                 result = json.load(f)
                 vericore_responses.append(result)
         except Exception as e:
-            bt.logging.error(f"DAEMON | Error processing file {file_dto['filepath']}: {e}")
+            bt.logging.error(f"DAEMON | {validator_uid} | Error processing file {file_dto['filepath']}: {e}")
             return None
 
     if len(vericore_responses) > 0:
         # Send
-        bt.logging.info(f"DAEMON | Sending vericore responses")
+        bt.logging.info(f"DAEMON | {validator_uid} | Sending vericore responses")
         send_validator_response_data(
-            validator_results_data_handler,
-            unique_id,
-            block_number,
-            False,
-            vericore_responses,
-            [],
-            [],
-            [],
+            store_response_handler=validator_results_data_handler,
+            validator_uid=validator_uid,
+            validator_hotkey=validator_hotkey,
+            unique_id=unique_id,
+            block_number=block_number,
+            has_summary_data=False,
+            vericore_responses=vericore_responses,
+            incentives=[],
+            weights=[],
+            moving_scores=[],
         )
 
-    bt.logging.info(f"DAEMON | Moving files")
+    bt.logging.info(f"DAEMON | {validator_uid} | Moving files")
     for filepath in files:
         try:
             sourceFile = filepath["filepath"]
@@ -141,10 +155,10 @@ def send_results(unique_id: str, block_number: int, results_dir: str, destinatio
 
             shutil.move(sourceFile, destinationFile)
         except Exception as e:
-            bt.logging.error(f"DAEMON | Error processing file {filepath}: {e}")
+            bt.logging.error(f"DAEMON | {validator_uid} | Error processing file {filepath}: {e}")
             return None
 
-    bt.logging.info(f"DAEMON | Moved files")
+    bt.logging.info(f"DAEMON | {validator_uid} | Moved files")
 
     return vericore_responses
 
@@ -155,7 +169,7 @@ def list_json_files(directory):
         if f.endswith(".json")
     ]
 
-def aggregate_results(results_dir, processed_results_dir, moving_scores):
+def aggregate_results(validator_uid: int, results_dir, processed_results_dir, moving_scores):
     """
     Scan the results directory for JSON files (each a query result), update moving_scores
     for each miner based on the reported final_score, then delete each processed file.
@@ -180,18 +194,18 @@ def aggregate_results(results_dir, processed_results_dir, moving_scores):
                     calculated_score = moving_scores[miner_uid] + final_score
 
                     bt.logging.info(
-                        f"DAEMON | Moving score for uid: {miner_uid} and final score: {final_score} with calculated scored {calculated_score}"
+                        f"DAEMON | {validator_uid} | Moving score for uid: {miner_uid} and final score: {final_score} with calculated scored {calculated_score}"
                     )
                     moving_scores[miner_uid] = calculated_score
 
         except Exception as e:
-            bt.logging.error(f"DAEMON | Error processing file {filepath}: {e}")
+            bt.logging.error(f"DAEMON | {validator_uid} | Error processing file {filepath}: {e}")
         finally:
             try:
                 os.remove(filepath)
-                bt.logging.info(f"DAEMON | Deleted processed file {filepath}")
+                bt.logging.info(f"DAEMON | {validator_uid} | Deleted processed file {filepath}")
             except Exception as e:
-                bt.logging.error(f"DAEMON | Error deleting file {filepath}: {e}")
+                bt.logging.error(f"DAEMON | {validator_uid} | Error deleting file {filepath}: {e}")
     return moving_scores, vericore_responses
 
 def generate_unique_id(validator_uid: int) -> str:
@@ -219,42 +233,43 @@ def main():
 
     tempo = subtensor.tempo(config.netuid)
     unique_id = generate_unique_id(my_uid)
-    bt.logging.info("DAEMON | Starting Validator Daemon loop.")
+    bt.logging.info(f"DAEMON | {my_uid} | Starting Validator Daemon loop.")
     while True:
         try:
             last_update = subtensor.blocks_since_last_update(config.netuid, my_uid)
             bt.logging.info(
-                f"DAEMON | Will aggregate results: {last_update} > {tempo + 1} = {last_update > tempo + 1} "
+                f"DAEMON | {my_uid} | Will aggregate results: {last_update} > {tempo + 1} = {last_update > tempo + 1} "
             )
             if last_update > tempo + 1:
             # if True:
-                bt.logging.info(f"DAEMON | Aggregating results")
+                bt.logging.info(f"DAEMON | {my_uid} | Aggregating results")
                 metagraph.sync()
 
                 # create new moving scores array in case new miners have been loaded
                 moving_scores = [INITIAL_WEIGHT] * len(metagraph.S)
                 moving_scores, vericore_responses = aggregate_results(
+                    my_uid,
                     output_dir,
                     processed_results_dir,
                     moving_scores
                 )
 
-                bt.logging.info(f"DAEMON | Moving scores: {moving_scores}")
+                bt.logging.info(f"DAEMON | {my_uid} | Moving scores: {moving_scores}")
 
                 if all(scores == 0 for scores in moving_scores):
-                    bt.logging.warning(f"DAEMON | Skipped setting of weights")
+                    bt.logging.warning(f"DAEMON | {my_uid} | Skipped setting of weights")
                     # Sleep for 5 seconds
                     time.sleep(10)
                     # Don't update weights if  all moving scores are 0 otherwise it might rate the weights equally.
                     continue
 
-                bt.logging.info(f"DAEMON | Moving scores: {moving_scores}")
+                bt.logging.info(f"DAEMON | {my_uid} | Moving scores: {moving_scores}")
                 arr = np.array(moving_scores, dtype=np.float32)
                 scale = 8.0
                 deltas = arr.max() - arr
                 exp_dec = np.exp(-deltas / scale)
                 weights = ((exp_dec / exp_dec.sum()) * 65535).tolist()
-                bt.logging.info(f"DAEMON | Setting weights on chain: {weights}")
+                bt.logging.info(f"DAEMON | {my_uid} | Setting weights on chain: {weights}")
                 subtensor.set_weights(
                     netuid=config.netuid,
                     wallet=wallet,
@@ -268,23 +283,27 @@ def main():
                     for neuron in subtensor.neurons(netuid=config.netuid)
                 ]
 
-                bt.logging.info("DAEMON | Preparing to send json data")
+                bt.logging.info(f"DAEMON | {my_uid} | Preparing to send json data")
 
                 send_validator_response_data(
-                    validator_results_data_handler,
-                    unique_id,
-                    subtensor.block,
-                    True,
-                    vericore_responses,
-                    moving_scores,
-                    weights,
-                    incentives,
+                    store_response_handler=validator_results_data_handler,
+                    validator_uid=my_uid,
+                    validator_hotkey= wallet.hotkey.ss58_address,
+                    unique_id=unique_id,
+                    block_number=subtensor.block,
+                    has_summary_data=True,
+                    vericore_responses=vericore_responses,
+                    moving_scores=moving_scores,
+                    weights=weights,
+                    incentives=incentives,
                 )
-                # reset unique id
 
+                # reset unique id
                 unique_id = generate_unique_id(my_uid)
             else:
                 send_results(
+                    validator_uid=my_uid,
+                    validator_hotkey=wallet.hotkey.ss58_address,
                     unique_id=unique_id,
                     block_number=-1,
                     results_dir=output_dir,
@@ -296,10 +315,10 @@ def main():
 
             time.sleep(60)
         except KeyboardInterrupt:
-            bt.logging.info(f"DAEMON | Validator Daemon interrupted. Exiting.")
+            bt.logging.info(f"DAEMON | {my_uid} | Validator Daemon interrupted. Exiting.")
             break
         except Exception as e:
-            bt.logging.error(f"DAEMON | Error in daemon loop: {e}")
+            bt.logging.error(f"DAEMON | {my_uid} | Error in daemon loop: {e}")
             traceback.print_exc()
             time.sleep(10)
 
