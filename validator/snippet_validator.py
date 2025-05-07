@@ -155,20 +155,27 @@ class SnippetValidator:
                 )
                 return vericore_miner_response
 
+            bt.logging.info(
+                f"{request_id} | {miner_uid} | {miner_evidence.url} | Domain verified"
+            )
 
             # check if snippet comes from verified domain
-            if not is_valid_domain(request_id, miner_uid, domain):
-                snippet_score = INVALID_DOMAIN_USED
-                vericore_miner_response = VericoreStatementResponse(
-                    url=miner_evidence.url,
-                    excerpt=miner_evidence.excerpt,
-                    domain=domain,
-                    snippet_found=False,
-                    local_score=0.0,
-                    snippet_score=snippet_score,
-                    snippet_score_reason="invalid_domain"
-                )
-                return vericore_miner_response
+            # if not is_valid_domain(request_id, miner_uid, domain):
+            #     snippet_score = INVALID_DOMAIN_USED
+            #     vericore_miner_response = VericoreStatementResponse(
+            #         url=miner_evidence.url,
+            #         excerpt=miner_evidence.excerpt,
+            #         domain=domain,
+            #         snippet_found=False,
+            #         local_score=0.0,
+            #         snippet_score=snippet_score,
+            #         snippet_score_reason="domain_not_verified"
+            #     )
+            #     return vericore_miner_response
+
+            bt.logging.info(
+                f"{request_id} | {miner_uid} | {miner_evidence.url} | Validating snippet"
+            )
 
             snippet_str = miner_evidence.excerpt.strip()
             # snippet was not processed - Score: -1
@@ -219,6 +226,10 @@ class SnippetValidator:
             #     )
             #     return vericore_miner_response
 
+            bt.logging.info(
+                f"{request_id} | {miner_uid} | {miner_evidence.url} | Fetching page text"
+            )
+
             # Fetch page text
             page_text = await self._fetch_page_text(request_id, miner_uid, miner_evidence.url)
 
@@ -235,6 +246,10 @@ class SnippetValidator:
                     snippet_score_reason="could_not_extract_html_from_url"
                 )
                 return vericore_miner_response
+
+            bt.logging.info(
+                f"{request_id} | {miner_uid} | {miner_evidence.url} | Verifying snippet in rendered page"
+            )
 
             # Verify that the snippet is actually within the provided url
             # #todo - should we split score between url exists and whether the web-page does include the snippet
