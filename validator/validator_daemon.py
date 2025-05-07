@@ -70,6 +70,7 @@ def setup_logging(wallet, config):
 def send_validator_response_data(
     store_response_handler: ValidatorResultsDataHandler,
     unique_id: str,
+     block_number: int,
     has_summary_data: bool,
     vericore_responses: List[dict],
     moving_scores: List[float],
@@ -77,8 +78,9 @@ def send_validator_response_data(
     incentives: List[float],
 ):
     if store_response_handler is not None:
-        bt.logging.info(f"Sending validator response data: {weights}, {incentives}")
+        bt.logging.info(f"DAEMON | block number: {block_number} | Sending validator response data: {weights}, {incentives}")
         validator_response_data = ValidatorResultsData()
+        validator_response_data.block_number = block_number
         validator_response_data.unique_id = unique_id
         validator_response_data.has_summary_data = has_summary_data
         validator_response_data.timestamp = time.time()
@@ -88,7 +90,7 @@ def send_validator_response_data(
         validator_response_data.incentives = incentives
         store_response_handler.send_json(validator_response_data)
 
-def send_results(unique_id: str, results_dir: str, destination_dir: str, validator_results_data_handler: ValidatorResultsDataHandler):
+def send_results(unique_id: str, block_number: int, results_dir: str, destination_dir: str, validator_results_data_handler: ValidatorResultsDataHandler):
     """
     Scan the results directory for JSON files (each a query result), update moving_scores
     for each miner based on the reported final_score, then delete each processed file.
@@ -123,6 +125,7 @@ def send_results(unique_id: str, results_dir: str, destination_dir: str, validat
         send_validator_response_data(
             validator_results_data_handler,
             unique_id,
+            block_number,
             False,
             vericore_responses,
             [],
@@ -191,6 +194,11 @@ def aggregate_results(results_dir, processed_results_dir, moving_scores):
                 bt.logging.error(f"DAEMON | Error deleting file {filepath}: {e}")
     return moving_scores, vericore_responses
 
+def generate_unique_id(validator_uid: int) -> str:
+    timestamp = int(time.time() * 1000)
+    random_suffix = random.randint(1000, 9999)
+    return f"{timestamp}{random_suffix}{str(validator_uid).zfill(3)}"
+
 
 def main():
     config = get_config()
@@ -210,7 +218,7 @@ def main():
     )
 
     tempo = subtensor.tempo(config.netuid)
-    unique_id = f"{my_uid}-{random.getrandbits(64):16x}"
+    unique_id = generate_unique_id(my_uid)
     bt.logging.info("DAEMON | Starting Validator Daemon loop.")
     while True:
         try:
@@ -265,6 +273,7 @@ def main():
                 send_validator_response_data(
                     validator_results_data_handler,
                     unique_id,
+                    subtensor.block,
                     True,
                     vericore_responses,
                     moving_scores,
@@ -272,10 +281,12 @@ def main():
                     incentives,
                 )
                 # reset unique id
-                unique_id = f"{my_uid}-{random.getrandbits(32):16x}"
+
+                unique_id = generate_unique_id(my_uid)
             else:
                 send_results(
-                    unique_id,
+                    unique_id=unique_id,
+                    block_number=-1,
                     results_dir=output_dir,
                     destination_dir=processed_results_dir,
                     validator_results_data_handler=validator_results_data_handler,
