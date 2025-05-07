@@ -169,23 +169,18 @@ def list_json_files(directory):
         if f.endswith(".json")
     ]
 
-def aggregate_results(validator_uid: int, results_dir, processed_results_dir, moving_scores):
-    """
-    Scan the results directory for JSON files (each a query result), update moving_scores
-    for each miner based on the reported final_score, then delete each processed file.
-    """
-    files = list_json_files(results_dir) + list_json_files(processed_results_dir)
+def calculate_moving_scores(validator_uid: int, response_directory: str, moving_scores, vericore_responses, add_to_vericore_responses: bool):
+    files = list_json_files(response_directory)
     if not files:
-        return moving_scores, None
-
-    vericore_responses = []
+        return moving_scores, vericore_responses
 
     for filepath in files:
         try:
 
             with open(filepath, "r") as f:
                 result = json.load(f)
-                vericore_responses.append(result)
+                if add_to_vericore_responses:
+                    vericore_responses.append(result)
 
             for res in result.get("results", []):
                 miner_uid = res.get("miner_uid")
@@ -206,6 +201,20 @@ def aggregate_results(validator_uid: int, results_dir, processed_results_dir, mo
                 bt.logging.info(f"DAEMON | {validator_uid} | Deleted processed file {filepath}")
             except Exception as e:
                 bt.logging.error(f"DAEMON | {validator_uid} | Error deleting file {filepath}: {e}")
+    return moving_scores, vericore_responses
+
+
+def aggregate_results(validator_uid: int, results_dir, processed_results_dir, moving_scores):
+    """
+    Scan the results directory for JSON files (each a query result), update moving_scores
+    for each miner based on the reported final_score, then delete each processed file.
+    """
+    vericore_responses = []
+
+    calculate_moving_scores(validator_uid, results_dir, moving_scores, vericore_responses, add_to_vericore_responses=True)
+
+    calculate_moving_scores(validator_uid, processed_results_dir, moving_scores, vericore_responses, add_to_vericore_responses=False)
+
     return moving_scores, vericore_responses
 
 def generate_unique_id(validator_uid: int) -> str:
