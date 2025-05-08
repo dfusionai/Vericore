@@ -7,11 +7,11 @@ import os
 from urllib.parse import urlparse
 
 from shared.exceptions import InsecureProtocolError
-from shared.top_level_domain_cache import is_valid_domain
+from shared.top_level_domain_cache import is_approved_domain
 from shared.veridex_protocol import SourceEvidence, VericoreStatementResponse
 from validator.domain_validator import domain_is_recently_registered
 from validator.quality_model import score_statement_distribution
-from validator.snippet_fetcher import SnippetFetcher, fetch_entire_page
+from validator.snippet_fetcher import fetch_entire_page
 from validator.verify_context_quality_model import verify_context_quality
 
 from shared.debug_util import DEBUG_LOCAL
@@ -21,7 +21,9 @@ from shared.scores import (
     SNIPPET_SAME_AS_STATEMENT,
     COULD_NOT_GET_PAGE_TEXT_FROM_URL,
     SNIPPET_NOT_VERIFIED_IN_URL,
-    DOMAIN_REGISTERED_RECENTLY, INVALID_DOMAIN_USED, SSL_DOMAIN_REQUIRED
+    DOMAIN_REGISTERED_RECENTLY,
+    SSL_DOMAIN_REQUIRED,
+    APPROVED_URL_MULTIPLIER
 )
 
 class SnippetValidator:
@@ -157,18 +159,9 @@ class SnippetValidator:
             )
 
             # check if snippet comes from verified domain
-            # if not is_valid_domain(request_id, miner_uid, domain):
-            #     snippet_score = INVALID_DOMAIN_USED
-            #     vericore_miner_response = VericoreStatementResponse(
-            #         url=miner_evidence.url,
-            #         excerpt=miner_evidence.excerpt,
-            #         domain=domain,
-            #         snippet_found=False,
-            #         local_score=0.0,
-            #         snippet_score=snippet_score,
-            #         snippet_score_reason="domain_not_verified"
-            #     )
-            #     return vericore_miner_response
+            approved_url_multiplier = 1
+            if is_approved_domain(request_id, miner_uid, domain):
+                approved_url_multiplier = APPROVED_URL_MULTIPLIER
 
             bt.logging.info(
                 f"{request_id} | {miner_uid} | {miner_evidence.url} | Validating snippet"
@@ -307,6 +300,7 @@ class SnippetValidator:
                 neutral=probs["neutral"],
                 entailment=probs["entailment"],
                 local_score=local_score,
+                approved_url_multiplier=approved_url_multiplier,
                 snippet_score=0,
                 context_similarity_score=context_score
             )

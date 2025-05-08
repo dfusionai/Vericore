@@ -12,6 +12,7 @@ from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
+
 import bittensor as bt
 
 from shared.veridex_protocol import (
@@ -19,6 +20,7 @@ from shared.veridex_protocol import (
     VeridexResponse,
     VericoreMinerStatementResponse,
     VericoreQueryResponse,
+    VericoreStatementResponse,
     SourceEvidence,
 )
 from shared.scores import (
@@ -43,6 +45,8 @@ REFRESH_INTERVAL_SECONDS =  60 * 20
 NUMBER_OF_MINERS = 3
 
 semaphore = asyncio.Semaphore(5)  # Limit to 10 threads at a time
+
+MAX_MINER_RESPONSES = 5
 
 LOWEST_FINAL_SCORE = -10
 HIGHEST_FINAL_SCORE = 10
@@ -317,8 +321,9 @@ class APIQueryHandler:
                 )
                 return miner_statement
 
+
             # Process Vericore response data
-            bt.logging.info(f"{request_id} | {miner_uid} | Verifying Miner Statements")
+            bt.logging.info(f"{request_id} | {miner_uid} | Verifying Miner Statements. Received {len(miner_response.synapse.veridex_response)} responses. Only Processing {MAX_MINER_RESPONSES}")
 
             # Create tasks
             validator = SnippetValidator()
@@ -328,10 +333,23 @@ class APIQueryHandler:
                     miner_uid=miner_uid,
                     original_statement=miner_response.synapse.statement,
                     miner_evidence=miner_vericore_response
-                ) for miner_vericore_response in miner_response.synapse.veridex_response
+                ) for miner_vericore_response in miner_response.synapse.veridex_response[:MAX_MINER_RESPONSES]
             ]
 
             vericore_statement_responses = await asyncio.gather(*tasks)
+
+            for ignored_miner_response in miner_response.synapse.veridex_response[MAX_MINER_RESPONSES:]:
+                vericore_statement_responses.append(
+                     VericoreStatementResponse(
+                        url=ignored_miner_response.url,
+                        excerpt=ignored_miner_response.excerpt,
+                        snippet_found=False,
+                        domain="",
+                        local_score=0.0,
+                        snippet_score=0.0,
+                        snippet_score_reason="too_many_snippets",
+                    )
+                )
 
             bt.logging.info(f"{request_id} | {miner_uid} | Scoring Miner Statements Based on Snippets")
 
@@ -352,7 +370,9 @@ class APIQueryHandler:
                     times_used = domain_counts.get(statement_response.domain, 1) - 1
                     domain_factor = 1.0 / (2**times_used)
                     statement_response.snippet_score = (
-                        statement_response.local_score * domain_factor
+                        statement_response.local_score *
+                        domain_factor *
+                        statement_response.approved_url_multiplier
                     )
                     statement_response.domain_factor = domain_factor
 
@@ -367,7 +387,8 @@ class APIQueryHandler:
             bt.logging.info(f"{request_id} | {miner_uid} | Final Score: {final_score} | Sum Of Snippets: {sum_of_snippets}")
             if is_test and is_nonsense and final_score > 0.5:
                 final_score -= 1.0
-            final_score = max(LOWEST_FINAL_SCORE, min(HIGHEST_FINAL_SCORE, final_score))
+
+            final_score = max(LOWEST_FINAL_SCORE, final_score)
 
             bt.logging.info(f"{request_id} | {miner_uid} | Calculated Final Score: {final_score}")
 
@@ -593,6 +614,10 @@ class APIQueryHandler:
                     break
 
         bt.logging.info(f"Selected {len(selected_miners)} miners with {len(null_miners)} null axons")
+
+        # recalculate all miners to be returned
+        selected_miners =  [all_miners[i] for i in selected_miner_indexes]
+
         return selected_miners
 
     def _hotkey_to_uid(self, hotkey: str) -> int:
