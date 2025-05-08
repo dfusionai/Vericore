@@ -21,8 +21,6 @@ from shared.validator_results_data import ValidatorResultsData
 
 bt.logging.set_trace()
 
-load_dotenv()
-
 INITIAL_WEIGHT = 0.0
 
 
@@ -133,7 +131,7 @@ def send_results(
 
     if len(vericore_responses) > 0:
         # Send
-        bt.logging.info(f"DAEMON | {validator_uid} | Sending vericore responses")
+        bt.logging.info(f"DAEMON | {validator_uid} | Sending {len(vericore_responses)} vericore responses")
         send_validator_response_data(
             store_response_handler=validator_results_data_handler,
             validator_uid=validator_uid,
@@ -146,8 +144,9 @@ def send_results(
             weights=[],
             moving_scores=[],
         )
+        bt.logging.info(f"DAEMON | {validator_uid} | Sent {len(vericore_responses)} vericore responses ")
 
-    bt.logging.info(f"DAEMON | {validator_uid} | Moving files")
+    bt.logging.info(f"DAEMON | {validator_uid} | Moving files: {len(files)}")
     for filepath in files:
         try:
             sourceFile = filepath["filepath"]
@@ -158,7 +157,7 @@ def send_results(
             bt.logging.error(f"DAEMON | {validator_uid} | Error processing file {filepath}: {e}")
             return None
 
-    bt.logging.info(f"DAEMON | {validator_uid} | Moved files")
+    bt.logging.info(f"DAEMON | {validator_uid} | Moved files: {len(files)}")
 
     return vericore_responses
 
