@@ -417,8 +417,7 @@ class APIQueryHandler:
         """
         subset_miners = self.select_miner_subset(number_of_miners=NUMBER_OF_MINERS)
 
-        miner_ids = [miner.miner_uid for miner in subset_miners]  # or neuron.uid
-        selected_miners = ' '.join(f'[{mid}]' for mid in miner_ids)
+        selected_miners = ' '.join(f'[{miner.miner_uid} / {miner.calculate_average_score()}]' for miner in subset_miners)
         bt.logging.info(f"{request_id} | Selected miners: {selected_miners}")
 
         synapse = VericoreSynapse(
