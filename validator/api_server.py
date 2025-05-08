@@ -9,13 +9,13 @@ from dataclasses import dataclass
 from typing import List
 
 from bittensor import NeuronInfo
+from bittensor.core.chain_data import neuron_info
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 import bittensor as bt
 
-from shared.debug_util import DEBUG_LOCAL
 from shared.veridex_protocol import (
     VericoreSynapse,
     VeridexResponse,
@@ -42,7 +42,7 @@ bt.logging.set_trace()
 load_dotenv()
 
 REFRESH_INTERVAL_SECONDS =  60 * 20
-NUMBER_OF_MINERS = 1
+NUMBER_OF_MINERS = 3
 
 semaphore = asyncio.Semaphore(5)  # Limit to 10 threads at a time
 
@@ -58,6 +58,7 @@ EXPLORATION_FACTOR = 0.1  # 10% exploration
 @dataclass
 class MinerSelection:
     miner_uid: int
+    miner_hotkey: str
     neuron_info: NeuronInfo
     scores: float
     request_count: int
@@ -83,9 +84,10 @@ class APIQueryHandler:
         self.miners: List[NeuronInfo] = []
         self.miner_cache: List[MinerSelection] = []
 
+        self.my_uid = self.metagraph.hotkeys.index(self.wallet.hotkey.ss58_address)
+
         self.refresh_miner_cache()
 
-        self.my_uid = self.metagraph.hotkeys.index(self.wallet.hotkey.ss58_address)
         self.statement_generator = StatementGenerator()
         # Directory to write individual result files (shared with the daemon)
         self.results_dir = "results"
@@ -471,28 +473,58 @@ class APIQueryHandler:
             bt.logging.error(f"Error writing result file {filename}: {e}")
 
     def loading_miners(self, neurons: List[NeuronInfo]):
-        bt.logging.info("Loading Miners")
+        bt.logging.info(f"{self.my_uid} | Loading Miners")
         # return [n for n in neurons if not n.validator_permit]
-        return [
-            MinerSelection(
-                miner_uid=index,
-                neuron_info=neuron,
-                scores=0,
-                request_count=0
-            )
-            for index, neuron in enumerate(neurons)
-        ]
+        if self.miner_cache is None or len(self.miner_cache) == 0:
+            bt.logging.info(f"{self.my_uid} | Loading brand new miners")
+            return [
+                MinerSelection(
+                    miner_uid=index,
+                    miner_hotkey=neuron.hotkey,
+                    neuron_info=neuron,
+                    scores=0,
+                    request_count=0
+                )
+                for index, neuron in enumerate(neurons)
+            ]
+
+        bt.logging.info(f"{self.my_uid} | Checking new miners have been loaded ")
+        # Loop through cache and see whether the hotkey is the same as the neuron
+        miner_cache_length = len(self.miner_cache)
+        new_miner_cache = list(self.miner_cache)
+        for index, neuron in enumerate(neurons):
+            if index < miner_cache_length :
+                miner_cache = new_miner_cache[index]
+                if miner_cache.miner_hotkey != neuron.hotkey:
+                    bt.logging.info(f"{self.my_uid} | New Miner found. Resetting miner selection for uid: {index}")
+                    miner_cache.miner_hotkey = neuron.hotkey
+                    miner_cache.neuron_info = neuron
+                    miner_cache.scores = 0
+                    miner_cache.request_count = 0
+            else:
+                bt.logging.info(f"{self.my_uid} | Creating new miner selection for uid: {index}")
+                miner_selection = MinerSelection(
+                    miner_uid=index,
+                    miner_hotkey=neuron.hotkey,
+                    neuron_info=neuron,
+                    scores=0,
+                    request_count=0
+                )
+                new_miner_cache.append(miner_selection)
+
+        return new_miner_cache
 
     def refresh_miner_cache(self):
         current_time = time.time()
         if  (current_time - self.last_refresh_time) > REFRESH_INTERVAL_SECONDS:
-            bt.logging.info("Refreshing metagraph")
+            bt.logging.info(f"{self.my_uid} | Refreshing metagraph")
             self.metagraph.sync()  # Fetch new data
             neurons = self.subtensor.neurons(netuid=self.config.netuid)
-            bt.logging.debug(f"Found {len(neurons)} neurons")
+            bt.logging.debug(f"{self.my_uid} | Found {len(neurons)} neurons")
             self.miner_cache = self.loading_miners(neurons)
-            bt.logging.info(f"Found {len(self.miners)} miners")
-            self.last_refresh_time = current_time
+            bt.logging.info(f"{self.my_uid} | Found {len(self.miner_cache)} miners")
+            # readd please
+            # self.last_refresh_time = current_time
 
 
     def get_weighted_miners(self, miners):
