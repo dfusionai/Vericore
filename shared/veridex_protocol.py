@@ -50,7 +50,7 @@ class VericoreStatementResponse():
 @dataclass
 class VericoreMinerStatementResponse():
   miner_hotkey: str
-  miner_uid: float
+  miner_uid: int
   status: str
   vericore_responses: typing.List["VericoreStatementResponse"] = field(default_factory=list)
   speed_factor: float = 0
