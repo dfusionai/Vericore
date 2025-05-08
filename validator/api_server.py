@@ -7,9 +7,7 @@ import json
 import logging
 from dataclasses import dataclass
 from typing import List
-
 from bittensor import NeuronInfo
-from bittensor.core.chain_data import neuron_info
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -523,8 +521,7 @@ class APIQueryHandler:
             bt.logging.debug(f"{self.my_uid} | Found {len(neurons)} neurons")
             self.miner_cache = self.loading_miners(neurons)
             bt.logging.info(f"{self.my_uid} | Found {len(self.miner_cache)} miners")
-            # readd please
-            # self.last_refresh_time = current_time
+            self.last_refresh_time = current_time
 
 
     def get_weighted_miners(self, miners):
@@ -539,8 +536,6 @@ class APIQueryHandler:
             normalized = (clamped_score + 5.0) / 15.0  # maps to [0, 1]
             weight = MIN_WEIGHT + normalized * (MAX_WEIGHT - MIN_WEIGHT)
             weights.append((miner_selection.miner_uid, weight))
-
-        bt.logging.debug(f"Found {len(weights)} weights: {weights}: miners: {miners} ")
 
         total_weight = sum(weight for _,weight in weights)
         # not sure if this is needed
@@ -560,7 +555,7 @@ class APIQueryHandler:
     def select_miner_subset(self, number_of_miners=5) -> List[MinerSelection]:
         self.refresh_miner_cache()
 
-        bt.logging.info(f"Selecting miner subset:")
+        bt.logging.info(f"Selecting miner subset")
 
         all_miners = self.miner_cache
 
@@ -570,7 +565,7 @@ class APIQueryHandler:
         # calculate the weights
         weighted_miners = self.get_weighted_miners(all_miners)
 
-        bt.logging.info(f"Weights for miners: {weighted_miners}:")
+        bt.logging.info(f"Weights calculated for miners")
 
         # select the miners index  based on the weights
         selected_miner_indexes = self.select_miner(weighted_miners, number_of_miners)
