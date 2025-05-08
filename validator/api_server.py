@@ -577,7 +577,9 @@ class APIQueryHandler:
         if null_miners:
             bt.logging.warning(f"Detected {len(null_miners)} miners with null axons. Fetching replacements...")
 
-            available_replacements = [miner for miner in all_miners if miner not in selected_miners and miner.neuron_info.axon_info is not None and miner.neuron_info.axon_info.is_serving]
+            available_replacement_ids = [miner.miner_uid for miner in all_miners if miner not in selected_miners and miner.neuron_info.axon_info is not None and miner.neuron_info.axon_info.is_serving]
+
+            available_replacements = [weighted_miner for weighted_miner in weighted_miners if weighted_miner[0] in available_replacement_ids]
 
             # Add replacements for the miners that have null axons
             for i, null_miner in enumerate(null_miners):
