@@ -9,7 +9,7 @@ from urllib.parse import urlparse
 from shared.veridex_protocol import SourceEvidence, VericoreStatementResponse
 from validator.domain_validator import domain_is_recently_registered
 from validator.quality_model import score_statement_distribution
-from validator.snippet_fetcher import SnippetFetcher
+from validator.snippet_fetcher import SnippetFetcher, fetch_entire_page
 from validator.verify_context_quality_model import verify_context_quality
 
 from shared.debug_util import DEBUG_LOCAL
@@ -41,7 +41,7 @@ class SnippetValidator:
 
     async def _fetch_page_text(self, request_id:str, miner_uid: int, url: str) -> str:
         try:
-            page_html = await self.snippet_fetcher.fetch_entire_page(request_id, miner_uid, url)
+            page_html = await fetch_entire_page(request_id, miner_uid, url)
 
             if page_html is None:
                 return ""
