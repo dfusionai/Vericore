@@ -6,7 +6,7 @@ from bs4 import BeautifulSoup
 from aiolimiter import AsyncLimiter
 
 import bittensor as bt
-
+import certifi
 
 REQUEST_TIMEOUT_SECONDS = 20
 
@@ -16,6 +16,7 @@ class SnippetFetcher:
     def __init__(self):
         # Initialize a shared client once
         self.client = httpx.AsyncClient(
+            verify=certifi.where(),
             follow_redirects=True,
             http2=True,
             headers={

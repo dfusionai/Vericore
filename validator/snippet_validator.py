@@ -6,6 +6,8 @@ import re
 import os
 from urllib.parse import urlparse
 
+from shared.exceptions import InsecureProtocolError
+from shared.top_level_domain_cache import is_valid_domain
 from shared.veridex_protocol import SourceEvidence, VericoreStatementResponse
 from validator.domain_validator import domain_is_recently_registered
 from validator.quality_model import score_statement_distribution
@@ -19,7 +21,7 @@ from shared.scores import (
     SNIPPET_SAME_AS_STATEMENT,
     COULD_NOT_GET_PAGE_TEXT_FROM_URL,
     SNIPPET_NOT_VERIFIED_IN_URL,
-    DOMAIN_REGISTERED_RECENTLY
+    DOMAIN_REGISTERED_RECENTLY, INVALID_DOMAIN_USED, SSL_DOMAIN_REQUIRED
 )
 
 class SnippetValidator:
@@ -28,8 +30,12 @@ class SnippetValidator:
 
     def _extract_domain(self, url: str) -> str:
         parsed = urlparse(url)
-        hostname = parsed.hostname
 
+        # Enforce "HTTPS" protocol
+        if parsed.scheme.lower() != "https":
+            raise InsecureProtocolError(url)
+
+        hostname = parsed.hostname
         try:
             # Check if it's an IP address
             ipaddress.ip_address(hostname)
@@ -134,8 +140,43 @@ class SnippetValidator:
             f"{request_id} | {miner_uid} | {miner_evidence.url} | Verifying miner snippet"
         )
         try:
+            try:
+                domain = self._extract_domain(miner_evidence.url)
+            except InsecureProtocolError:
+                bt.logging.error(f"{request_id} | {miner_uid} | {miner_evidence.url} | Url provided isn't SSL")
+                snippet_score = SSL_DOMAIN_REQUIRED
+                vericore_miner_response = VericoreStatementResponse(
+                    url=miner_evidence.url,
+                    excerpt=miner_evidence.excerpt,
+                    snippet_found=False,
+                    local_score=0.0,
+                    snippet_score=snippet_score,
+                    snippet_score_reason="ssl_url_required"
+                )
+                return vericore_miner_response
 
-            domain = self._extract_domain(miner_evidence.url)
+            bt.logging.info(
+                f"{request_id} | {miner_uid} | {miner_evidence.url} | Domain verified"
+            )
+
+            # check if snippet comes from verified domain
+            # if not is_valid_domain(request_id, miner_uid, domain):
+            #     snippet_score = INVALID_DOMAIN_USED
+            #     vericore_miner_response = VericoreStatementResponse(
+            #         url=miner_evidence.url,
+            #         excerpt=miner_evidence.excerpt,
+            #         domain=domain,
+            #         snippet_found=False,
+            #         local_score=0.0,
+            #         snippet_score=snippet_score,
+            #         snippet_score_reason="domain_not_verified"
+            #     )
+            #     return vericore_miner_response
+
+            bt.logging.info(
+                f"{request_id} | {miner_uid} | {miner_evidence.url} | Validating snippet"
+            )
+
             snippet_str = miner_evidence.excerpt.strip()
             # snippet was not processed - Score: -1
             if not snippet_str:
@@ -185,6 +226,10 @@ class SnippetValidator:
             #     )
             #     return vericore_miner_response
 
+            bt.logging.info(
+                f"{request_id} | {miner_uid} | {miner_evidence.url} | Fetching page text"
+            )
+
             # Fetch page text
             page_text = await self._fetch_page_text(request_id, miner_uid, miner_evidence.url)
 
@@ -201,6 +246,10 @@ class SnippetValidator:
                     snippet_score_reason="could_not_extract_html_from_url"
                 )
                 return vericore_miner_response
+
+            bt.logging.info(
+                f"{request_id} | {miner_uid} | {miner_evidence.url} | Verifying snippet in rendered page"
+            )
 
             # Verify that the snippet is actually within the provided url
             # #todo - should we split score between url exists and whether the web-page does include the snippet

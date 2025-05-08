@@ -16,4 +16,4 @@ httpx
 httpx[http2]
 
 tldextract
-
+certifi
