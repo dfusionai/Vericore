@@ -25,9 +25,6 @@ from shared.scores import (
 )
 
 class SnippetValidator:
-    def __init__(self):
-        self.snippet_fetcher = SnippetFetcher()
-
     def _extract_domain(self, url: str) -> str:
         parsed = urlparse(url)
 
