@@ -579,16 +579,16 @@ class APIQueryHandler:
 
             available_replacement_ids = [miner.miner_uid for miner in all_miners if miner not in selected_miners and miner.neuron_info.axon_info is not None and miner.neuron_info.axon_info.is_serving]
 
-            available_replacements = [weighted_miner for weighted_miner in weighted_miners if weighted_miner[0] in available_replacement_ids]
 
             # Add replacements for the miners that have null axons
             for i, null_miner in enumerate(null_miners):
-                if available_replacements:
+                if available_replacement_ids:
+                    available_replacements = [weighted_miner for weighted_miner in weighted_miners if weighted_miner[0] in available_replacement_ids]
                     replacement_miner_indexes = self.select_miner(available_replacements, 1)
                     if len(replacement_miner_indexes) != 0:
-                        replacement_miner = replacement_miner_indexes[0]
-                        selected_miners.append(replacement_miner)
-                        available_replacements.remove(replacement_miner)
+                        replacement_miner_id = replacement_miner_indexes[0]
+                        selected_miners.append(replacement_miner_id)
+                        available_replacement_ids.remove(replacement_miner_id)
                 else:
                     break
 
