@@ -45,6 +45,7 @@ class VericoreStatementResponse():
   neutral: float = 0
   entailment: float = 0
   context_similarity_score:float=0
+  is_similar_context: bool=False
   approved_url_multiplier:float=0
   page_text: str = ""
 

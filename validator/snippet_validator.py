@@ -198,23 +198,10 @@ class SnippetValidator:
 
             bt.logging.info(f"{request_id} | {miner_uid} | {miner_evidence.url} | Is snippet in same context as statement")
 
-            is_same_context, context_score,  = await self.is_snippet_same_statement_context(
+            is_similar_context, context_score,  = await self.is_snippet_same_statement_context(
                 request_id, miner_uid, miner_evidence.url, original_statement, snippet_str
             )
-            bt.logging.info(f"{request_id} | {miner_uid} | {miner_evidence.url} | Is the same context: {is_same_context} | Snippet Context: {context_score}")
-
-            # if not is_same_context:
-            #     snippet_score = -5.0
-            #     vericore_miner_response = VericoreStatementResponse(
-            #         url=miner_evidence.url,
-            #         excerpt=miner_evidence.excerpt,
-            #         domain=domain,
-            #         snippet_found=False,
-            #         local_score=0.0,
-            #         snippet_score=snippet_score,
-            #         snippet_score_reason="different_statement_context"
-            #     )
-            #     return vericore_miner_response
+            bt.logging.info(f"{request_id} | {miner_uid} | {miner_evidence.url} | Is the same context: {is_similar_context} | Snippet Context: {context_score}")
 
             bt.logging.info(
                 f"{request_id} | {miner_uid} | {miner_evidence.url} | Fetching page text"
@@ -302,7 +289,8 @@ class SnippetValidator:
                 local_score=local_score,
                 approved_url_multiplier=approved_url_multiplier,
                 snippet_score=0,
-                context_similarity_score=context_score
+                context_similarity_score=context_score,
+                is_similar_context=is_similar_context
             )
             end_time = time.time()
             bt.logging.info(
