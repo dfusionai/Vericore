@@ -370,7 +370,7 @@ class APIQueryHandler:
                     times_used = domain_counts.get(statement_response.domain, 1) - 1
                     domain_factor = 1.0 / (2**times_used)
                     statement_response.snippet_score = (
-                        statement_response.local_score *
+                        (statement_response.local_score + statement_response.context_similarity_score) *
                         domain_factor *
                         statement_response.approved_url_multiplier
                     )

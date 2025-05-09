@@ -9,10 +9,11 @@ from urllib.parse import urlparse
 from shared.exceptions import InsecureProtocolError
 from shared.top_level_domain_cache import is_approved_domain
 from shared.veridex_protocol import SourceEvidence, VericoreStatementResponse
+from validator.context_similarity_validator import calculate_similarity_score, ContextSimilarityValidator
 from validator.domain_validator import domain_is_recently_registered
 from validator.quality_model import score_statement_distribution
 from validator.snippet_fetcher import fetch_entire_page
-from validator.verify_context_quality_model import verify_text_similarity
+from validator.similarity_quality_model import verify_text_similarity
 
 from shared.debug_util import DEBUG_LOCAL
 
@@ -27,6 +28,9 @@ from shared.scores import (
 )
 
 class SnippetValidator:
+    def __init__(self):
+        self.context_similarity_validator = ContextSimilarityValidator()
+
     def _extract_domain(self, url: str) -> str:
         parsed = urlparse(url)
 
@@ -293,6 +297,16 @@ class SnippetValidator:
                 statement=original_statement.strip(),
                 snippet=miner_evidence.excerpt
             )
+
+            context_similarity_score = self.context_similarity_validator.calculate_similarity_score(
+                statement=original_statement.strip(),
+                excerpt=miner_evidence.excerpt
+            )
+
+            bt.logging.info(
+                f"{request_id} | {miner_uid} | {miner_evidence.url} | Local Score {local_score} | Context similarity: {context_similarity_score} "
+            )
+
             vericore_miner_response = VericoreStatementResponse(
                 url=miner_evidence.url,
                 excerpt=miner_evidence.excerpt,
@@ -305,6 +319,7 @@ class SnippetValidator:
                 local_score=local_score,
                 approved_url_multiplier=approved_url_multiplier,
                 snippet_score=0,
+                context_similarity_score=context_similarity_score,
                 statement_similarity_score=statement_similarity_score,
                 is_similar_context=is_similar_excerpt
             )
