@@ -18,6 +18,11 @@ async def domain_is_recently_registered(domain) -> bool:
         if isinstance(creation_date, list):
             creation_date = creation_date[0]  # In case of multiple creation dates
 
+        if not creation_date:
+            bt.logging.error(f"Creation date is null")
+            # Give benefit of doubt if error happened: return False
+            return False
+
         return (datetime.now() - creation_date).days <= 30  # Adjust the days threshold
     except Exception as e:
         # Give benefit of doubt if error happened: return False

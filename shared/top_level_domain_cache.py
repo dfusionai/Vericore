@@ -33,7 +33,7 @@ def get_tld_cache_data():
     return tld_cache.cache
 
 
-def is_valid_domain(request_id: str, miner_uid: int , domain: str):
+def is_approved_domain(request_id: str, miner_uid: int, domain: str):
     bt.logging.info(f"{request_id} | {miner_uid} | Validating domain {domain}")
     cache_data = get_tld_cache_data()
 
