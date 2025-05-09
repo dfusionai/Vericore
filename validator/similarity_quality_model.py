@@ -6,7 +6,9 @@ import bittensor as bt
 from sentence_transformers import SentenceTransformer, util
 import threading
 
-class VerifyContextQualityModel:
+SENTENCE_SIMILARITY_THRESHOLD = 0.95
+
+class SimilarityQualityModel:
     """
 		Using sentence-transformers (e.g., all-MiniLM-L6-v2 or all-mpnet-base-v2), this model generates sentence embeddings to measure similarity.
 
@@ -33,9 +35,7 @@ class VerifyContextQualityModel:
       chunks = [" ".join(sentences[i: i + window_size]) for i in range(0, len(sentences), step)]
       return chunks
 
-    def verify_context(self, snippet_text: str, context_text: str) :
-
-        threshold = 0.75
+    def verify_similarity(self, snippet_text: str, context_text: str) :
         # Encode both texts
         snippet_embedding = self.model.encode(snippet_text, convert_to_tensor=True)
 
@@ -46,32 +46,24 @@ class VerifyContextQualityModel:
         similarities = util.pytorch_cos_sim(snippet_embedding, chunk_embeddings)
         best_score = similarities.max().item()
 
-        # context_embedding = self.model.encode(context_text, convert_to_tensor=True)
-        # Compare snippet against each chunk
-        # best_score = 0
-        # for chunk in chunks:
-        #    chunk_embedding = self.model.encode(chunk, convert_to_tensor=True)
-        #    similarity = util.pytorch_cos_sim(snippet_embedding, chunk_embedding).item()
-        #    best_score = max(best_score, similarity)  # Keep highest similarity
+        return best_score > SENTENCE_SIMILARITY_THRESHOLD, best_score   # Return best match score and decision
 
-        return best_score > threshold, best_score   # Return best match score and decision
-
-verify_quality_model = VerifyContextQualityModel()
+similarity_quality_model = SimilarityQualityModel()
 model_lock = threading.Lock()
 
-async def verify_context_quality(snippet_text: str, context_text: str) :
-    return await asyncio.to_thread(verify_quality_model.verify_context, snippet_text, context_text)
+async def verify_text_similarity(snippet_text: str, context_text: str) :
+    return await asyncio.to_thread(similarity_quality_model.verify_similarity, snippet_text, context_text)
 
 async def main(snippet_text:str, context_text:str):
-    score = await verify_context_quality(snippet_text, context_text)
+    score = await verify_text_similarity(snippet_text, context_text)
 
     print(f"Match: {score}"  )
 
 # Used for testing purposes
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run Quality Model.")
-    parser.add_argument("--statement", type=str, default="Dinosaur existed", help="Dinosaur existed")
-    parser.add_argument("--snippet", type=str, default="Dinosaur existed in the Jurassic Period", help="Dinosaur existed in the Jurassic Period")
+    parser.add_argument("--statement", type=str, default="Narwhals are known for their long, spiral tusks, which are actually elongated teeth that can grow up to 10 feet (3 meters) in length, making them one of the most unique marine mammals in the Arctic.", help="Dinosaur existed")
+    parser.add_argument("--snippet", type=str, default="...Narwhals are known for their long, spiral tusks, which are actually elongated teeth that can grow up to 10 feet (3 meters) in length, making them one of the most unique marine mammals in the Arctic...", help="Dinosaur existed in the Jurassic Period")
     args = parser.parse_args()
 
     asyncio.run(main(args.statement, args.snippet))
