@@ -36,7 +36,7 @@ class ValidatorResultsDataHandler:
                 "type": LoggerType.Validator.value,
             }
             json_data = json.dumps(asdict(results_data))
-            bt.logging.info(f"DAEMON | {self.validator_uid} |  Sending json response to {self.proxy_url}")
+            bt.logging.info(f"DAEMON | {self.validator_uid} | Sending json response to {self.proxy_url}")
             requests.post(self.proxy_url, json=json_data, timeout=300, headers=headers)
             bt.logging.info(f"DAEMON | {self.validator_uid} | Sent to store response data")
         except requests.exceptions.RequestException as e:
