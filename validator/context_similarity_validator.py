@@ -3,7 +3,7 @@ import argparse
 from sentence_transformers import SentenceTransformer, util
 from transformers import AutoTokenizer, AutoModel
 
-MAX_VALIDATOR_THREADS = 5
+MAX_VALIDATOR_THREADS = 10
 
 class ContextSimilarityValidator:
 
