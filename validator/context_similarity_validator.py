@@ -38,7 +38,11 @@ class ContextSimilarityPool:
 pool = ContextSimilarityPool(MAX_VALIDATOR_THREADS)
 
 def calculate_similarity_score(statement: str, excerpt: str):
-    return pool.get_handler().calculate_similarity_score(statement, excerpt)
+    handler = pool.get_handler()
+    try:
+        return handler.calculate_similarity_score(statement, excerpt)
+    finally:
+        pool.return_handler(handler)
 
 def main(statement:str, snippet: str):
     result = calculate_similarity_score(statement, snippet)
