@@ -1,8 +1,9 @@
-
+import queue
 import argparse
 from sentence_transformers import SentenceTransformer, util
 from transformers import AutoTokenizer, AutoModel
 
+MAX_VALIDATOR_THREADS = 5
 
 class ContextSimilarityValidator:
 
@@ -21,10 +22,23 @@ class ContextSimilarityValidator:
 
         return float(util.pytorch_cos_sim(statement_embedding, excerpt_embedding).item())
 
-validator = ContextSimilarityValidator()
+
+class ContextSimilarityPool:
+    def __init__(self, size=5):
+        self.pool = queue.Queue(maxsize=size)  # Create a thread-safe queue
+        for _ in range(size):
+            self.pool.put(ContextSimilarityValidator())  # Fill the pool with instances of SimilarityHandler
+
+    def get_handler(self):
+        return self.pool.get()  # Get a handler from the pool (blocking if none available)
+
+    def return_handler(self, handler):
+        self.pool.put(handler)  # Return the handler to the pool
+
+pool = ContextSimilarityPool(MAX_VALIDATOR_THREADS)
 
 def calculate_similarity_score(statement: str, excerpt: str):
-    return validator.calculate_similarity_score(statement, excerpt)
+    return pool.get_handler().calculate_similarity_score(statement, excerpt)
 
 def main(statement:str, snippet: str):
     result = calculate_similarity_score(statement, snippet)
