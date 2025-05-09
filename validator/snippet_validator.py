@@ -202,7 +202,7 @@ class SnippetValidator:
                 request_id, miner_uid, miner_evidence.url, original_statement, snippet_str
             )
 
-            bt.logging.info(f"{request_id} | {miner_uid} | {miner_evidence.url} | Is the same statement: {is_similar_excerpt} | Snippet Context: {similarity_score}")
+            bt.logging.info(f"{request_id} | {miner_uid} | {miner_evidence.url} | Is the same statement: {is_similar_excerpt} | Snippet Context: {statement_similarity_score}")
 
             if is_similar_excerpt:
                 snippet_score = EXCERPT_TOO_SIMILAR
