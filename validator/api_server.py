@@ -5,21 +5,22 @@ import argparse
 import asyncio
 import json
 import logging
+from dataclasses import dataclass
 from typing import List
-
 from bittensor import NeuronInfo
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
+
 import bittensor as bt
 
-from shared.debug_util import DEBUG_LOCAL
 from shared.veridex_protocol import (
     VericoreSynapse,
     VeridexResponse,
     VericoreMinerStatementResponse,
     VericoreQueryResponse,
+    VericoreStatementResponse,
     SourceEvidence,
 )
 from shared.scores import (
@@ -40,14 +41,34 @@ bt.logging.set_trace()
 
 load_dotenv()
 
-REFRESH_INTERVAL_SECONDS = 60
+REFRESH_INTERVAL_SECONDS =  60 * 20
 NUMBER_OF_MINERS = 3
 
 semaphore = asyncio.Semaphore(5)  # Limit to 10 threads at a time
 
+MAX_MINER_RESPONSES = 5
 
 LOWEST_FINAL_SCORE = -10
 HIGHEST_FINAL_SCORE = 10
+
+###############################################################################
+
+MAX_WEIGHT = 100.0  # Cap on how much weight any miner can have
+MIN_WEIGHT = 1.0  # Floor to give new miners a chance
+EXPLORATION_FACTOR = 0.1  # 10% exploration
+
+@dataclass
+class MinerSelection:
+    miner_uid: int
+    miner_hotkey: str
+    neuron_info: NeuronInfo
+    scores: float
+    request_count: int
+
+    def calculate_average_score(self) -> float:
+        if self.request_count == 0:
+            return 0
+        return self.scores/self.request_count
 
 ###############################################################################
 # APIQueryHandler: handles miner queries, scores responses, and writes each
@@ -63,10 +84,12 @@ class APIQueryHandler:
 
         self.last_refresh_time: float = 0
         self.miners: List[NeuronInfo] = []
+        self.miner_cache: List[MinerSelection] = []
+
+        self.my_uid = self.metagraph.hotkeys.index(self.wallet.hotkey.ss58_address)
 
         self.refresh_miner_cache()
 
-        self.my_uid = self.metagraph.hotkeys.index(self.wallet.hotkey.ss58_address)
         self.statement_generator = StatementGenerator()
         # Directory to write individual result files (shared with the daemon)
         self.results_dir = "results"
@@ -298,8 +321,9 @@ class APIQueryHandler:
                 )
                 return miner_statement
 
+
             # Process Vericore response data
-            bt.logging.info(f"{request_id} | {miner_uid} | Verifying Miner Statements")
+            bt.logging.info(f"{request_id} | {miner_uid} | Verifying Miner Statements. Received {len(miner_response.synapse.veridex_response)} responses. Only Processing {MAX_MINER_RESPONSES}")
 
             # Create tasks
             validator = SnippetValidator()
@@ -309,10 +333,23 @@ class APIQueryHandler:
                     miner_uid=miner_uid,
                     original_statement=miner_response.synapse.statement,
                     miner_evidence=miner_vericore_response
-                ) for miner_vericore_response in miner_response.synapse.veridex_response
+                ) for miner_vericore_response in miner_response.synapse.veridex_response[:MAX_MINER_RESPONSES]
             ]
 
             vericore_statement_responses = await asyncio.gather(*tasks)
+
+            for ignored_miner_response in miner_response.synapse.veridex_response[MAX_MINER_RESPONSES:]:
+                vericore_statement_responses.append(
+                     VericoreStatementResponse(
+                        url=ignored_miner_response.url,
+                        excerpt=ignored_miner_response.excerpt,
+                        snippet_found=False,
+                        domain="",
+                        local_score=0.0,
+                        snippet_score=0.0,
+                        snippet_score_reason="too_many_snippets",
+                    )
+                )
 
             bt.logging.info(f"{request_id} | {miner_uid} | Scoring Miner Statements Based on Snippets")
 
@@ -333,7 +370,9 @@ class APIQueryHandler:
                     times_used = domain_counts.get(statement_response.domain, 1) - 1
                     domain_factor = 1.0 / (2**times_used)
                     statement_response.snippet_score = (
-                        statement_response.local_score * domain_factor
+                        (statement_response.local_score + statement_response.context_similarity_score) *
+                        domain_factor *
+                        statement_response.approved_url_multiplier
                     )
                     statement_response.domain_factor = domain_factor
 
@@ -348,7 +387,8 @@ class APIQueryHandler:
             bt.logging.info(f"{request_id} | {miner_uid} | Final Score: {final_score} | Sum Of Snippets: {sum_of_snippets}")
             if is_test and is_nonsense and final_score > 0.5:
                 final_score -= 1.0
-            final_score = max(LOWEST_FINAL_SCORE, min(HIGHEST_FINAL_SCORE, final_score))
+
+            final_score = max(LOWEST_FINAL_SCORE, final_score)
 
             bt.logging.info(f"{request_id} | {miner_uid} | Calculated Final Score: {final_score}")
 
@@ -375,6 +415,12 @@ class APIQueryHandler:
             )
             return miner_statement
 
+    def update_miner_selection_cache(self, vericore_responses: List[VericoreMinerStatementResponse]):
+        for miner_response in vericore_responses:
+            miner_selection = self.miner_cache[miner_response.miner_uid]
+            miner_selection.request_count += 1
+            miner_selection.scores += miner_response.final_score
+
     async def handle_query(
         self,
         request_id: str,
@@ -390,10 +436,9 @@ class APIQueryHandler:
            the local moving_scores.
         4. Write the complete result (including final scores) to a uniquely named JSON file.
         """
-        subset_neurons = self.select_miner_subset(k=NUMBER_OF_MINERS)
+        subset_miners = self.select_miner_subset(number_of_miners=NUMBER_OF_MINERS)
 
-        miner_ids = [neuron.uid for neuron in subset_neurons]  # or neuron.uid
-        selected_miners = ' '.join(f'[{mid}]' for mid in miner_ids)
+        selected_miners = ' '.join(f'[{miner.miner_uid} / {miner.calculate_average_score()}]' for miner in subset_miners)
         bt.logging.info(f"{request_id} | Selected miners: {selected_miners}")
 
         synapse = VericoreSynapse(
@@ -404,15 +449,17 @@ class APIQueryHandler:
         #         asyncio.create_task(
         #             self.process_miner_request(request_id, neuron, synapse, statement, is_test, is_nonsense)
         #         )
-        #         for neuron in subset_neurons
+        #         for neuron in subset_miners
         #     ]
         # )
         responses = await asyncio.gather(
             *[
-                self.process_miner_request(request_id, neuron, synapse, statement, is_test, is_nonsense)
-                for neuron in subset_neurons
+                self.process_miner_request(request_id, selected_miner.neuron_info, synapse, statement, is_test, is_nonsense)
+                for selected_miner in subset_miners
             ]
         )
+        # update scores
+
         bt.logging.info(f"{request_id} | Completed all miner requests")
 
         response = VericoreQueryResponse(
@@ -425,6 +472,13 @@ class APIQueryHandler:
             results=responses,
         )
 
+        bt.logging.info(f"{request_id} | Refreshing selection cache")
+
+        # Update miner selection score cache
+        self.update_miner_selection_cache(responses)
+
+        bt.logging.info(f"{request_id} | Selection cache refreshed")
+
         return response
 
     def write_result_file(self, request_id: str, result: VericoreQueryResponse):
@@ -436,53 +490,134 @@ class APIQueryHandler:
         except Exception as e:
             bt.logging.error(f"Error writing result file {filename}: {e}")
 
-    def determine_miners(self, neurons: List[NeuronInfo]):
-        if DEBUG_LOCAL:
-            bt.logging.info("Returning all neurons since valid permit is all set to true for local")
-            return neurons
-
-        bt.logging.info("Determining miners")
+    def loading_miners(self, neurons: List[NeuronInfo]):
+        bt.logging.info(f"{self.my_uid} | Loading Miners")
         # return [n for n in neurons if not n.validator_permit]
-        return [n for n in neurons]
+        if self.miner_cache is None or len(self.miner_cache) == 0:
+            bt.logging.info(f"{self.my_uid} | Loading brand new miners")
+            return [
+                MinerSelection(
+                    miner_uid=index,
+                    miner_hotkey=neuron.hotkey,
+                    neuron_info=neuron,
+                    scores=0,
+                    request_count=0
+                )
+                for index, neuron in enumerate(neurons)
+            ]
+
+        bt.logging.info(f"{self.my_uid} | Checking new miners have been loaded ")
+        # Loop through cache and see whether the hotkey is the same as the neuron
+        miner_cache_length = len(self.miner_cache)
+        new_miner_cache = list(self.miner_cache)
+        for index, neuron in enumerate(neurons):
+            if index < miner_cache_length :
+                miner_cache = new_miner_cache[index]
+                if miner_cache.miner_hotkey != neuron.hotkey:
+                    bt.logging.info(f"{self.my_uid} | New Miner found. Resetting miner selection for uid: {index}")
+                    miner_cache.miner_hotkey = neuron.hotkey
+                    miner_cache.neuron_info = neuron
+                    miner_cache.scores = 0
+                    miner_cache.request_count = 0
+            else:
+                bt.logging.info(f"{self.my_uid} | Creating new miner selection for uid: {index}")
+                miner_selection = MinerSelection(
+                    miner_uid=index,
+                    miner_hotkey=neuron.hotkey,
+                    neuron_info=neuron,
+                    scores=0,
+                    request_count=0
+                )
+                new_miner_cache.append(miner_selection)
+
+        return new_miner_cache
 
     def refresh_miner_cache(self):
         current_time = time.time()
         if  (current_time - self.last_refresh_time) > REFRESH_INTERVAL_SECONDS:
-            bt.logging.info("Refreshing metagraph")
+            bt.logging.info(f"{self.my_uid} | Refreshing metagraph")
             self.metagraph.sync()  # Fetch new data
             neurons = self.subtensor.neurons(netuid=self.config.netuid)
-            bt.logging.debug(f"Found {len(neurons)} neurons")
-            self.miners = self.determine_miners(neurons)
-            bt.logging.info(f"Found {len(self.miners)} miners")
+            bt.logging.debug(f"{self.my_uid} | Found {len(neurons)} neurons")
+            self.miner_cache = self.loading_miners(neurons)
+            bt.logging.info(f"{self.my_uid} | Found {len(self.miner_cache)} miners")
+            self.last_refresh_time = current_time
 
-    def select_miner_subset(self, k=5):
+
+    def get_weighted_miners(self, miners):
+        weights = []
+        # for miner_selection in miners:
+        #     weight = min(MAX_WEIGHT, max(MIN_WEIGHT, miner_selection.calculate_average_score()))
+        #     weights.append((miner_selection.miner_uid, weight))
+
+        for miner_selection in miners:
+            raw_score = miner_selection.scores
+            clamped_score = max(-5.0, min(raw_score, 10.0))  # [-5, 10]
+            normalized = (clamped_score + 5.0) / 15.0  # maps to [0, 1]
+            weight = MIN_WEIGHT + normalized * (MAX_WEIGHT - MIN_WEIGHT)
+            weights.append((miner_selection.miner_uid, weight))
+
+        total_weight = sum(weight for _,weight in weights)
+        # not sure if this is needed
+        if total_weight == 0:
+            return [(m, 1.0 / len(weights)) for m, _ in weights]  # fallback: equal chance
+
+        adjusted_weights = [(m, (1 - EXPLORATION_FACTOR) * w / total_weight) for m, w in weights]
+        equal_chance = EXPLORATION_FACTOR / len(weights)
+        final_weights = [(miner_uid, weight + equal_chance) for miner_uid, weight in adjusted_weights]
+
+        return final_weights
+
+    def select_miner(self, weighted_miners, number_of_miners=5):
+        miner_ids, probs = zip(*weighted_miners)
+        return random.choices(miner_ids, weights=probs, k=number_of_miners)
+
+    def select_miner_subset(self, number_of_miners=5) -> List[MinerSelection]:
         self.refresh_miner_cache()
 
-        bt.logging.info(f"Selecting miner subset:")
+        bt.logging.info(f"Selecting miner subset")
 
-        all_miners = self.miners
-        if len(all_miners) <= k:
+        all_miners = self.miner_cache
+
+        if len(all_miners) <= number_of_miners:
             return all_miners
 
-        selected_miners = random.sample(all_miners, k)
+        # calculate the weights
+        weighted_miners = self.get_weighted_miners(all_miners)
 
-        null_miners = [miner for miner in selected_miners if miner.axon_info is None or not miner.axon_info.is_serving]
+        bt.logging.info(f"Weights calculated for miners")
+
+        # select the miners index  based on the weights
+        selected_miner_indexes = self.select_miner(weighted_miners, number_of_miners)
+
+        # get all the miners for the selected indexes
+        selected_miners =  [all_miners[i] for i in selected_miner_indexes]
+
+        null_miners = [miner for miner in selected_miners if miner.neuron_info.axon_info is None or not miner.neuron_info.axon_info.is_serving]
 
         if null_miners:
             bt.logging.warning(f"Detected {len(null_miners)} miners with null axons. Fetching replacements...")
 
-            available_replacements = [miner for miner in all_miners if miner not in selected_miners and miner.axon_info is not None and miner.axon_info.is_serving]
+            available_replacement_ids = [miner.miner_uid for miner in all_miners if miner not in selected_miners and miner.neuron_info.axon_info is not None and miner.neuron_info.axon_info.is_serving]
+
 
             # Add replacements for the miners that have null axons
             for i, null_miner in enumerate(null_miners):
-                if available_replacements:
-                    replacement = random.choice(available_replacements)
-                    selected_miners.append(replacement)
-                    available_replacements.remove(replacement)
+                if available_replacement_ids:
+                    available_replacements = [weighted_miner for weighted_miner in weighted_miners if weighted_miner[0] in available_replacement_ids]
+                    replacement_miner_indexes = self.select_miner(available_replacements, 1)
+                    if len(replacement_miner_indexes) != 0:
+                        replacement_miner_id = replacement_miner_indexes[0]
+                        selected_miners.append(replacement_miner_id)
+                        available_replacement_ids.remove(replacement_miner_id)
                 else:
                     break
 
         bt.logging.info(f"Selected {len(selected_miners)} miners with {len(null_miners)} null axons")
+
+        # recalculate all miners to be returned
+        selected_miners =  [all_miners[i] for i in selected_miner_indexes]
+
         return selected_miners
 
     def _hotkey_to_uid(self, hotkey: str) -> int:

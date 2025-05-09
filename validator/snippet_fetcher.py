@@ -6,7 +6,7 @@ from bs4 import BeautifulSoup
 from aiolimiter import AsyncLimiter
 
 import bittensor as bt
-
+import certifi
 
 REQUEST_TIMEOUT_SECONDS = 20
 
@@ -14,8 +14,11 @@ REQUEST_TIMEOUT_SECONDS = 20
 class SnippetFetcher:
 
     def __init__(self):
+        bt.logging.info("SnippetFetcher created")
+
         # Initialize a shared client once
         self.client = httpx.AsyncClient(
+            verify=certifi.where(),
             follow_redirects=True,
             http2=True,
             headers={
@@ -124,3 +127,14 @@ class SnippetFetcher:
         #     return ""
         # # finally:
         #    # self.driver.quit()
+
+snippet_fetcher = SnippetFetcher()
+
+async def fetch_entire_page(
+    request_id: str, miner_uid: int, url: str
+) -> str | None:
+    return await snippet_fetcher.fetch_entire_page(request_id, miner_uid, url)
+
+
+
+

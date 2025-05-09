@@ -2,9 +2,10 @@ import json
 from dataclasses import asdict
 
 import requests
-import os
+
 import bittensor as bt
 
+from shared.environment_variables import DASHBOARD_API_URL
 from shared.validator_results_data import ValidatorResultsData
 from shared.log_data import LoggerType
 
@@ -35,23 +36,23 @@ class ValidatorResultsDataHandler:
                 "type": LoggerType.Validator.value,
             }
             json_data = json.dumps(asdict(results_data))
-            bt.logging.info(f"DAEMON | Sending json response to {self.proxy_url}")
+            bt.logging.info(f"DAEMON | {self.validator_uid} | Sending json response to {self.proxy_url}")
             requests.post(self.proxy_url, json=json_data, timeout=300, headers=headers)
-            bt.logging.info(f"DAEMON | Sent to store response data")
+            bt.logging.info(f"DAEMON | {self.validator_uid} | Sent to store response data")
         except requests.exceptions.RequestException as e:
-            bt.logging.error(f"DAEMON | Failed to store json responses: {e}")
+            bt.logging.error(f"DAEMON | {self.validator_uid} | Failed to store json responses: {e}")
 
 
 def register_validator_results_data_handler(
     validator_uid: int, wallet: str
 ) -> ValidatorResultsDataHandler:
-    proxy_url = os.environ.get("DASHBOARD_API_URL", "https://dashboard.vericore.dfusion.ai")
+    dashboard_api_url = DASHBOARD_API_URL
 
-    bt.logging.info(f"Registered STORE JSON logging on url:  {proxy_url}")
+    bt.logging.info(f"Registered STORE JSON logging on url:  {dashboard_api_url}")
 
     # Use the actual Bittensor logger
     store_results_handler = ValidatorResultsDataHandler(
-        proxy_url, validator_uid, wallet
+        dashboard_api_url, validator_uid, wallet
     )
 
     return store_results_handler

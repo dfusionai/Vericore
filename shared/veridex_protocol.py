@@ -45,12 +45,15 @@ class VericoreStatementResponse():
   neutral: float = 0
   entailment: float = 0
   context_similarity_score:float=0
+  statement_similarity_score: float = 0
+  is_similar_context: bool=False
+  approved_url_multiplier:float=0
   page_text: str = ""
 
 @dataclass
 class VericoreMinerStatementResponse():
   miner_hotkey: str
-  miner_uid: float
+  miner_uid: int
   status: str
   vericore_responses: typing.List["VericoreStatementResponse"] = field(default_factory=list)
   speed_factor: float = 0

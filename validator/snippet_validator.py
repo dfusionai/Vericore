@@ -6,11 +6,14 @@ import re
 import os
 from urllib.parse import urlparse
 
+from shared.exceptions import InsecureProtocolError
+from shared.top_site_cache import is_approved_site
 from shared.veridex_protocol import SourceEvidence, VericoreStatementResponse
+from validator.context_similarity_validator import calculate_similarity_score
 from validator.domain_validator import domain_is_recently_registered
 from validator.quality_model import score_statement_distribution
-from validator.snippet_fetcher import SnippetFetcher
-from validator.verify_context_quality_model import verify_context_quality
+from validator.snippet_fetcher import fetch_entire_page
+from validator.similarity_quality_model import verify_text_similarity
 
 from shared.debug_util import DEBUG_LOCAL
 
@@ -19,17 +22,21 @@ from shared.scores import (
     SNIPPET_SAME_AS_STATEMENT,
     COULD_NOT_GET_PAGE_TEXT_FROM_URL,
     SNIPPET_NOT_VERIFIED_IN_URL,
-    DOMAIN_REGISTERED_RECENTLY
+    DOMAIN_REGISTERED_RECENTLY,
+    SSL_DOMAIN_REQUIRED,
+    APPROVED_URL_MULTIPLIER, EXCERPT_TOO_SIMILAR
 )
 
 class SnippetValidator:
-    def __init__(self):
-        self.snippet_fetcher = SnippetFetcher()
 
     def _extract_domain(self, url: str) -> str:
         parsed = urlparse(url)
-        hostname = parsed.hostname
 
+        # Enforce "HTTPS" protocol
+        if parsed.scheme.lower() != "https":
+            raise InsecureProtocolError(url)
+
+        hostname = parsed.hostname
         try:
             # Check if it's an IP address
             ipaddress.ip_address(hostname)
@@ -41,7 +48,7 @@ class SnippetValidator:
 
     async def _fetch_page_text(self, request_id:str, miner_uid: int, url: str) -> str:
         try:
-            page_html = await self.snippet_fetcher.fetch_entire_page(request_id, miner_uid, url)
+            page_html = await fetch_entire_page(request_id, miner_uid, url)
 
             if page_html is None:
                 return ""
@@ -53,16 +60,16 @@ class SnippetValidator:
             return ""
 
 
-    async def is_snippet_same_statement_context(
+    async def is_snippet_similar_to_statement(
         self, request_id: str, miner_uid: int, url: str, statement: str, snippet_text: str
     ) :
         try:
-            bt.logging.info(f"{request_id} | {miner_uid} | url: {url} | Checking snippet context")
-            return await verify_context_quality(statement, snippet_text)
+            bt.logging.info(f"{request_id} | {miner_uid} | url: {url} | Checking whether the snippet provided is the same as the statement")
+            return await verify_text_similarity(statement, snippet_text)
 
         except Exception as e:
             bt.logging.error(
-                f"{request_id} | {miner_uid} | url: {url} | Error verifying snippet in rendered page: {e}"
+                f"{request_id} | {miner_uid} | url: {url} | Error checking snippet similarity: {e}"
             )
             return False
 
@@ -134,8 +141,34 @@ class SnippetValidator:
             f"{request_id} | {miner_uid} | {miner_evidence.url} | Verifying miner snippet"
         )
         try:
+            try:
+                domain = self._extract_domain(miner_evidence.url)
+            except InsecureProtocolError:
+                bt.logging.error(f"{request_id} | {miner_uid} | {miner_evidence.url} | Url provided isn't SSL")
+                snippet_score = SSL_DOMAIN_REQUIRED
+                vericore_miner_response = VericoreStatementResponse(
+                    url=miner_evidence.url,
+                    excerpt=miner_evidence.excerpt,
+                    snippet_found=False,
+                    local_score=0.0,
+                    snippet_score=snippet_score,
+                    snippet_score_reason="ssl_url_required"
+                )
+                return vericore_miner_response
 
-            domain = self._extract_domain(miner_evidence.url)
+            bt.logging.info(
+                f"{request_id} | {miner_uid} | {miner_evidence.url} | Domain verified"
+            )
+
+            # check if snippet comes from verified domain
+            approved_url_multiplier = 1
+            if is_approved_site(request_id, miner_uid, domain):
+                approved_url_multiplier = APPROVED_URL_MULTIPLIER
+
+            bt.logging.info(
+                f"{request_id} | {miner_uid} | {miner_evidence.url} | Validating snippet"
+            )
+
             snippet_str = miner_evidence.excerpt.strip()
             # snippet was not processed - Score: -1
             if not snippet_str:
@@ -167,23 +200,30 @@ class SnippetValidator:
 
             bt.logging.info(f"{request_id} | {miner_uid} | {miner_evidence.url} | Is snippet in same context as statement")
 
-            is_same_context, context_score,  = await self.is_snippet_same_statement_context(
+            is_similar_excerpt, statement_similarity_score,  = await self.is_snippet_similar_to_statement(
                 request_id, miner_uid, miner_evidence.url, original_statement, snippet_str
             )
-            bt.logging.info(f"{request_id} | {miner_uid} | {miner_evidence.url} | Is the same context: {is_same_context} | Snippet Context: {context_score}")
 
-            # if not is_same_context:
-            #     snippet_score = -5.0
-            #     vericore_miner_response = VericoreStatementResponse(
-            #         url=miner_evidence.url,
-            #         excerpt=miner_evidence.excerpt,
-            #         domain=domain,
-            #         snippet_found=False,
-            #         local_score=0.0,
-            #         snippet_score=snippet_score,
-            #         snippet_score_reason="different_statement_context"
-            #     )
-            #     return vericore_miner_response
+            bt.logging.info(f"{request_id} | {miner_uid} | {miner_evidence.url} | Is the same statement: {is_similar_excerpt} | Snippet Context: {statement_similarity_score}")
+
+            if is_similar_excerpt:
+                snippet_score = EXCERPT_TOO_SIMILAR
+                vericore_miner_response = VericoreStatementResponse(
+                    url=miner_evidence.url,
+                    excerpt=miner_evidence.excerpt,
+                    domain=domain,
+                    snippet_found=False,
+                    local_score=0.0,
+                    snippet_score=snippet_score,
+                    snippet_score_reason="excerpt_too_similar",
+                    statement_similarity_score=statement_similarity_score
+                )
+                return vericore_miner_response
+
+
+            bt.logging.info(
+                f"{request_id} | {miner_uid} | {miner_evidence.url} | Fetching page text"
+            )
 
             # Fetch page text
             page_text = await self._fetch_page_text(request_id, miner_uid, miner_evidence.url)
@@ -201,6 +241,10 @@ class SnippetValidator:
                     snippet_score_reason="could_not_extract_html_from_url"
                 )
                 return vericore_miner_response
+
+            bt.logging.info(
+                f"{request_id} | {miner_uid} | {miner_evidence.url} | Verifying snippet in rendered page"
+            )
 
             # Verify that the snippet is actually within the provided url
             # #todo - should we split score between url exists and whether the web-page does include the snippet
@@ -251,6 +295,16 @@ class SnippetValidator:
                 statement=original_statement.strip(),
                 snippet=miner_evidence.excerpt
             )
+
+            context_similarity_score = calculate_similarity_score(
+                statement=original_statement.strip(),
+                excerpt=miner_evidence.excerpt
+            )
+
+            bt.logging.info(
+                f"{request_id} | {miner_uid} | {miner_evidence.url} | Local Score {local_score} | Context similarity: {context_similarity_score} "
+            )
+
             vericore_miner_response = VericoreStatementResponse(
                 url=miner_evidence.url,
                 excerpt=miner_evidence.excerpt,
@@ -261,8 +315,11 @@ class SnippetValidator:
                 neutral=probs["neutral"],
                 entailment=probs["entailment"],
                 local_score=local_score,
+                approved_url_multiplier=approved_url_multiplier,
                 snippet_score=0,
-                context_similarity_score=context_score
+                context_similarity_score=context_similarity_score,
+                statement_similarity_score=statement_similarity_score,
+                is_similar_context=is_similar_excerpt
             )
             end_time = time.time()
             bt.logging.info(
