@@ -7,7 +7,7 @@ import os
 from urllib.parse import urlparse
 
 from shared.exceptions import InsecureProtocolError
-from shared.top_level_domain_cache import is_approved_domain
+from shared.top_site_cache import is_approved_site
 from shared.veridex_protocol import SourceEvidence, VericoreStatementResponse
 from validator.context_similarity_validator import calculate_similarity_score
 from validator.domain_validator import domain_is_recently_registered
@@ -162,7 +162,7 @@ class SnippetValidator:
 
             # check if snippet comes from verified domain
             approved_url_multiplier = 1
-            if is_approved_domain(request_id, miner_uid, domain):
+            if is_approved_site(request_id, miner_uid, domain):
                 approved_url_multiplier = APPROVED_URL_MULTIPLIER
 
             bt.logging.info(
