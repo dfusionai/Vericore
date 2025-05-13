@@ -53,7 +53,7 @@ HIGHEST_FINAL_SCORE = 10
 
 ###############################################################################
 
-MAX_WEIGHT = 100.0  # Cap on how much weight any miner can have
+MAX_WEIGHT = 10.0  # Cap on how much weight any miner can have
 MIN_WEIGHT = 1.0  # Floor to give new miners a chance
 EXPLORATION_FACTOR = 0.1  # 10% exploration
 
