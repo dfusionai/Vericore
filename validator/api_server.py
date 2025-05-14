@@ -608,12 +608,12 @@ class APIQueryHandler:
                     replacement_miner_indexes = self.select_miner(available_replacements, 1)
                     if len(replacement_miner_indexes) != 0:
                         replacement_miner_id = replacement_miner_indexes[0]
-                        selected_miners.append(replacement_miner_id)
+                        selected_miner_indexes.append(replacement_miner_id)
                         available_replacement_ids.remove(replacement_miner_id)
                 else:
                     break
 
-        bt.logging.info(f"Selected {len(selected_miners)} miners with {len(null_miners)} null axons")
+        bt.logging.info(f"Selected {len(selected_miner_indexes)} miners with {len(null_miners)} null axons")
 
         # recalculate all miners to be returned
         selected_miners =  [all_miners[i] for i in selected_miner_indexes]
