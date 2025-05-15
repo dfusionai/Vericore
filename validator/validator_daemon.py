@@ -269,14 +269,14 @@ def main():
 
                 if all(scores == 0 for scores in moving_scores):
                     bt.logging.warning(f"DAEMON | {my_uid} | Skipped setting of weights")
-                    # Sleep for 5 seconds
+                    # Sleep for 10 seconds
                     time.sleep(10)
                     # Don't update weights if  all moving scores are 0 otherwise it might rate the weights equally.
                     continue
 
                 bt.logging.info(f"DAEMON | {my_uid} | Moving scores: {moving_scores}")
                 arr = np.array(moving_scores, dtype=np.float32)
-                scale = 10.0
+                scale = 8.0
                 deltas = arr.max() - arr
                 exp_dec = np.exp(-deltas / scale)
                 weights = ((exp_dec / exp_dec.sum()) * 65535).tolist()
