@@ -369,8 +369,12 @@ class APIQueryHandler:
                     # Use times_used - 1 since we want first use to have no penalty
                     times_used = domain_counts.get(statement_response.domain, 1) - 1
                     domain_factor = 1.0 / (2**times_used)
+                    if statement_response.context_similarity_score < 0:
+                        statement_response.context_similarity_score = 0
+
                     statement_response.snippet_score = (
-                        (statement_response.local_score + statement_response.context_similarity_score) *
+                        statement_response.local_score *
+                        statement_response.context_similarity_score *
                         domain_factor *
                         statement_response.approved_url_multiplier
                     )
@@ -513,12 +517,15 @@ class APIQueryHandler:
         for index, neuron in enumerate(neurons):
             if index < miner_cache_length :
                 miner_cache = new_miner_cache[index]
-                if miner_cache.miner_hotkey != neuron.hotkey:
+                if miner_cache.miner_hotkey != neuron.hotkey :
                     bt.logging.info(f"{self.my_uid} | New Miner found. Resetting miner selection for uid: {index}")
                     miner_cache.miner_hotkey = neuron.hotkey
                     miner_cache.neuron_info = neuron
                     miner_cache.scores = 0
                     miner_cache.request_count = 0
+                elif miner_cache.neuron_info.axon_info.ip != neuron.axon_info.ip:
+                    bt.logging.info(f"{self.my_uid} | New neuron found for uid: {index}")
+                    miner_cache.neuron_info = neuron
             else:
                 bt.logging.info(f"{self.my_uid} | Creating new miner selection for uid: {index}")
                 miner_selection = MinerSelection(
