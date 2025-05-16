@@ -53,7 +53,7 @@ HIGHEST_FINAL_SCORE = 10
 
 ###############################################################################
 
-MAX_WEIGHT = 100.0  # Cap on how much weight any miner can have
+MAX_WEIGHT = 10.0  # Cap on how much weight any miner can have
 MIN_WEIGHT = 1.0  # Floor to give new miners a chance
 EXPLORATION_FACTOR = 0.1  # 10% exploration
 
@@ -369,8 +369,12 @@ class APIQueryHandler:
                     # Use times_used - 1 since we want first use to have no penalty
                     times_used = domain_counts.get(statement_response.domain, 1) - 1
                     domain_factor = 1.0 / (2**times_used)
+                    if statement_response.context_similarity_score < 0:
+                        statement_response.context_similarity_score = 0
+
                     statement_response.snippet_score = (
-                        (statement_response.local_score + statement_response.context_similarity_score) *
+                        statement_response.local_score *
+                        statement_response.context_similarity_score *
                         domain_factor *
                         statement_response.approved_url_multiplier
                     )
@@ -513,12 +517,15 @@ class APIQueryHandler:
         for index, neuron in enumerate(neurons):
             if index < miner_cache_length :
                 miner_cache = new_miner_cache[index]
-                if miner_cache.miner_hotkey != neuron.hotkey:
+                if miner_cache.miner_hotkey != neuron.hotkey :
                     bt.logging.info(f"{self.my_uid} | New Miner found. Resetting miner selection for uid: {index}")
                     miner_cache.miner_hotkey = neuron.hotkey
                     miner_cache.neuron_info = neuron
                     miner_cache.scores = 0
                     miner_cache.request_count = 0
+                elif miner_cache.neuron_info.axon_info.ip != neuron.axon_info.ip:
+                    bt.logging.info(f"{self.my_uid} | New neuron found for uid: {index}")
+                    miner_cache.neuron_info = neuron
             else:
                 bt.logging.info(f"{self.my_uid} | Creating new miner selection for uid: {index}")
                 miner_selection = MinerSelection(
@@ -608,12 +615,12 @@ class APIQueryHandler:
                     replacement_miner_indexes = self.select_miner(available_replacements, 1)
                     if len(replacement_miner_indexes) != 0:
                         replacement_miner_id = replacement_miner_indexes[0]
-                        selected_miners.append(replacement_miner_id)
+                        selected_miner_indexes.append(replacement_miner_id)
                         available_replacement_ids.remove(replacement_miner_id)
                 else:
                     break
 
-        bt.logging.info(f"Selected {len(selected_miners)} miners with {len(null_miners)} null axons")
+        bt.logging.info(f"Selected {len(selected_miner_indexes)} miners with {len(null_miners)} null axons")
 
         # recalculate all miners to be returned
         selected_miners =  [all_miners[i] for i in selected_miner_indexes]

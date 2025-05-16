@@ -185,7 +185,10 @@ def calculate_moving_scores(validator_uid: int, response_directory: str, moving_
                 miner_uid = res.get("miner_uid")
                 final_score = res.get("final_score")
                 if miner_uid is not None and final_score is not None:
-                    calculated_score = moving_scores[miner_uid] + final_score
+                    if moving_scores[miner_uid] == 0:
+                        calculated_score = final_score
+                    else:
+                        calculated_score = (moving_scores[miner_uid] + final_score)/2
 
                     bt.logging.info(
                         f"DAEMON | {validator_uid} | Moving score for uid: {miner_uid} and final score: {final_score} with calculated scored {calculated_score}"
@@ -266,7 +269,7 @@ def main():
 
                 if all(scores == 0 for scores in moving_scores):
                     bt.logging.warning(f"DAEMON | {my_uid} | Skipped setting of weights")
-                    # Sleep for 5 seconds
+                    # Sleep for 10 seconds
                     time.sleep(10)
                     # Don't update weights if  all moving scores are 0 otherwise it might rate the weights equally.
                     continue
