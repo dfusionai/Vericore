@@ -204,3 +204,29 @@ This project is licensed under the MIT License. See the [LICENSE](LICENSE) file 
 ---
 
 Feel free to contribute, raise issues, or suggest improvements to this template. Happy mining and validating on the Bittensor network!
+
+
+
+
+sudo apt-get update && sudo apt-get install -y \
+    libgtk-4-1 \
+    libgraphene-1.0-0 \
+    libxslt1.1 \
+    libwoff1 \
+    libvpx9 \
+    libevent-2.1-7t64 \
+    libopus0 \
+    libgstreamer1.0-0 \
+    gstreamer1.0-plugins-base \
+    gstreamer1.0-plugins-good \
+    gstreamer1.0-plugins-bad \
+    gstreamer1.0-libav \
+    libflite1 \
+    libwebpdemux2 \
+    libwebpmux3 \
+    libavif16 \
+    libharfbuzz-icu0 \
+    libenchant-2-2 \
+    libsecret-1-0 \
+    libhyphen0 \
+    libmanette-0.2-0

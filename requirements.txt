@@ -17,3 +17,5 @@ httpx[http2]
 
 tldextract
 certifi
+
+playwright
