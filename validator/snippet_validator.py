@@ -4,7 +4,7 @@ import tldextract
 import ipaddress
 import re
 import os
-from urllib.parse import urlparse
+from urllib.parse import urlparse, parse_qs, unquote
 
 from shared.exceptions import InsecureProtocolError
 from shared.top_site_cache import is_approved_site
@@ -24,7 +24,9 @@ from shared.scores import (
     SNIPPET_NOT_VERIFIED_IN_URL,
     DOMAIN_REGISTERED_RECENTLY,
     SSL_DOMAIN_REQUIRED,
-    APPROVED_URL_MULTIPLIER, EXCERPT_TOO_SIMILAR
+    APPROVED_URL_MULTIPLIER,
+    EXCERPT_TOO_SIMILAR,
+    USING_SEARCH_AS_EVIDENCE
 )
 
 class SnippetValidator:
@@ -45,6 +47,13 @@ class SnippetValidator:
             # It's not an IP, extract the domain
             ext = tldextract.extract(hostname)
             return f"{ext.domain}.{ext.suffix}" if ext.suffix else ext.domain
+
+    def _extract_query_string(self, url: str) -> dict:
+        parsed = urlparse(url)
+
+        query_string = parsed.query
+
+        return parse_qs(query_string)
 
     async def _fetch_page_text(self, request_id:str, miner_uid: int, url: str) -> str:
         try:
@@ -127,6 +136,38 @@ class SnippetValidator:
             )
             return False
 
+    async def validate_miner_query_params(
+        self,
+        request_id: str,
+        miner_uid: int,
+        original_statement: str,
+        miner_evidence: SourceEvidence
+    ):
+        query_params = self._extract_query_string(miner_evidence.url)
+        if query_params is None:
+            return None
+
+        # check whether query params is the same as the excerpt
+        for key, values in query_params.items():
+            bt.logging.info(f"{request_id} | {miner_uid} | {miner_evidence.url} | {values} | Checking query parameters")
+
+            is_similar_excerpt, statement_similarity_score,  = await self.is_snippet_similar_to_statement(
+                request_id, miner_uid, miner_evidence.url, miner_evidence.excerpt, unquote(values[0])
+            )
+            # Using search as evidence - 5
+            if is_similar_excerpt:
+                snippet_score = USING_SEARCH_AS_EVIDENCE
+                vericore_miner_response = VericoreStatementResponse(
+                    url=miner_evidence.url,
+                    excerpt=miner_evidence.excerpt,
+                    domain='',
+                    snippet_found=False,
+                    local_score=0.0,
+                    snippet_score=snippet_score,
+                    snippet_score_reason="using_search_as_evidence",
+                )
+                return vericore_miner_response
+
 
     async def validate_miner_snippet(
         self,
@@ -197,6 +238,17 @@ class SnippetValidator:
                     snippet_score_reason="snippet_same_as_statement"
                 )
                 return vericore_miner_response
+
+            # check if url has query string and excerpt same as query string
+            response = await self.validate_miner_query_params(
+                request_id,
+                miner_uid,
+                original_statement,
+                miner_evidence
+            )
+
+            if response is not None:
+                return response
 
             bt.logging.info(f"{request_id} | {miner_uid} | {miner_evidence.url} | Is snippet in same context as statement")
 
