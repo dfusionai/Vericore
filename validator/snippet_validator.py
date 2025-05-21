@@ -12,6 +12,7 @@ from shared.veridex_protocol import SourceEvidence, VericoreStatementResponse
 from validator.context_similarity_validator import calculate_similarity_score
 from validator.domain_validator import domain_is_recently_registered
 from validator.quality_model import score_statement_distribution
+from validator.snippet_context_evaluator import assess_statement_context
 from validator.snippet_fetcher import fetch_entire_page
 from validator.similarity_quality_model import verify_text_similarity
 
@@ -26,7 +27,7 @@ from shared.scores import (
     SSL_DOMAIN_REQUIRED,
     APPROVED_URL_MULTIPLIER,
     EXCERPT_TOO_SIMILAR,
-    USING_SEARCH_AS_EVIDENCE
+    USING_SEARCH_AS_EVIDENCE, UNRELATED_SNIPPET_PROVIDED
 )
 
 class SnippetValidator:
@@ -140,8 +141,8 @@ class SnippetValidator:
         self,
         request_id: str,
         miner_uid: int,
-        original_statement: str,
-        miner_evidence: SourceEvidence
+        miner_evidence: SourceEvidence,
+        domain: str
     ):
         query_params = self._extract_query_string(miner_evidence.url)
         if query_params is None:
@@ -160,7 +161,7 @@ class SnippetValidator:
                 vericore_miner_response = VericoreStatementResponse(
                     url=miner_evidence.url,
                     excerpt=miner_evidence.excerpt,
-                    domain='',
+                    domain=domain,
                     snippet_found=False,
                     local_score=0.0,
                     snippet_score=snippet_score,
@@ -243,8 +244,8 @@ class SnippetValidator:
             response = await self.validate_miner_query_params(
                 request_id,
                 miner_uid,
-                original_statement,
-                miner_evidence
+                miner_evidence,
+                domain
             )
 
             if response is not None:
@@ -347,6 +348,35 @@ class SnippetValidator:
                 statement=original_statement.strip(),
                 snippet=miner_evidence.excerpt
             )
+
+            print(f"is correct context: {miner_evidence.excerpt} {original_statement.strip()}")
+
+            is_correct_context = assess_statement_context(
+                request_id=request_id,
+                miner_uid=miner_uid,
+                statement_url=miner_evidence.url,
+                statement=original_statement.strip(),
+                webpage=page_text,
+            )
+
+            print(f"is correct context. result: {is_correct_context}")
+
+            if is_correct_context is None or is_correct_context["response"] == "UNRELATED":
+                bt.logging.warning(
+                    f"{request_id} | {miner_uid} | {miner_evidence.url} | Unrelated evidence provided "
+                )
+                snippet_score = UNRELATED_SNIPPET_PROVIDED
+                vericore_miner_response = VericoreStatementResponse(
+                    url=miner_evidence.url,
+                    excerpt=miner_evidence.excerpt,
+                    domain=domain,
+                    snippet_found=False,
+                    local_score=0.0,
+                    snippet_score=snippet_score,
+                    snippet_score_reason="unrelated_snippet_provided",
+                    page_text=page_text if DEBUG_LOCAL else ""
+                )
+                return vericore_miner_response
 
             context_similarity_score = calculate_similarity_score(
                 statement=original_statement.strip(),
