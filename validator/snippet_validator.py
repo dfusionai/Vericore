@@ -9,10 +9,10 @@ from urllib.parse import urlparse, parse_qs, unquote
 from shared.exceptions import InsecureProtocolError
 from shared.top_site_cache import is_approved_site
 from shared.veridex_protocol import SourceEvidence, VericoreStatementResponse
-from validator.context_similarity_validator import calculate_similarity_score
+# from validator.context_similarity_validator import calculate_similarity_score
 from validator.domain_validator import domain_is_recently_registered
 from validator.quality_model import score_statement_distribution
-from validator.snippet_context_evaluator import assess_statement_context
+from validator.snippet_context_evaluator import assess_statement_context, assess_statement_context_async
 from validator.snippet_fetcher import fetch_entire_page
 from validator.similarity_quality_model import verify_text_similarity
 
@@ -343,15 +343,7 @@ class SnippetValidator:
                 )
                 return vericore_miner_response
 
-            # Determine whether statement is neutral/corroborated or refuted
-            probs, local_score = await score_statement_distribution(
-                statement=original_statement.strip(),
-                snippet=miner_evidence.excerpt
-            )
-
-            print(f"is correct context: {miner_evidence.excerpt} {original_statement.strip()}")
-
-            is_correct_context = assess_statement_context(
+            is_correct_context = await assess_statement_context_async(
                 request_id=request_id,
                 miner_uid=miner_uid,
                 statement_url=miner_evidence.url,
@@ -359,7 +351,7 @@ class SnippetValidator:
                 webpage=page_text,
             )
 
-            print(f"is correct context. result: {is_correct_context}")
+            print(f"{request_id} | {miner_uid} | {miner_evidence.url} | is correct context | result: {is_correct_context}")
 
             if is_correct_context is None or is_correct_context["response"] == "UNRELATED":
                 bt.logging.warning(
@@ -378,13 +370,22 @@ class SnippetValidator:
                 )
                 return vericore_miner_response
 
-            context_similarity_score = calculate_similarity_score(
+            # Determine whether statement is neutral/corroborated or refuted
+            probs, local_score = await score_statement_distribution(
                 statement=original_statement.strip(),
-                excerpt=miner_evidence.excerpt
+                snippet=miner_evidence.excerpt
             )
 
+            # print(f"is correct context: {miner_evidence.excerpt} {original_statement.strip()}")
+
+            # context_similarity_score = calculate_similarity_score(
+            #     statement=original_statement.strip(),
+            #     excerpt=miner_evidence.excerpt
+            # )
+            context_similarity_score = 1
+
             bt.logging.info(
-                f"{request_id} | {miner_uid} | {miner_evidence.url} | Local Score {local_score} | Context similarity: {context_similarity_score} "
+                f"{request_id} | {miner_uid} | {miner_evidence.url} | Local Score {local_score} | context score {is_correct_context} "
             )
 
             vericore_miner_response = VericoreStatementResponse(
