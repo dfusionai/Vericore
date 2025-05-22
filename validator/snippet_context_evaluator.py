@@ -2,30 +2,40 @@ import queue
 import argparse
 import json
 import re
+import time
 import asyncio
 import torch
 import bittensor as bt
+import os
 from concurrent.futures import ThreadPoolExecutor
 from transformers import AutoTokenizer, AutoModelForCausalLM
 
-NO_THREADS_IN_POOL = 2
+
+# Configurable constants
+NO_THREADS_IN_POOL = min(8, os.cpu_count() or 4)
+MODEL_ID = "microsoft/phi-4-mini-instruct"
+
+bt.logging.info("Initializing LLM")
+
+TOKENIZER  = AutoTokenizer.from_pretrained(MODEL_ID)
+MODEL = AutoModelForCausalLM.from_pretrained(
+    MODEL_ID,
+    torch_dtype=torch.float16,  # fp16 will fit more easily on a single V100 (32 GB)
+    device_map="auto",  # accelerate will place everything on cuda:0
+    low_cpu_mem_usage=True,  # cut down peak CPU RAM requirements
+    # torch_dtype="auto",
+    # # torch_dtype=torch.float32,
+    # device_map={ "": "cpu" }
+)
+
+bt.logging.info("Initialized LLM. Model Loaded")
 
 class SnippetContextEvaluator:
 
     def __init__(self):
         # self.model_id = "microsoft/phi-4-mini-reasoning"
-        self.model_id = "microsoft/phi-4-mini-instruct"
-        self.tokenizer = AutoTokenizer.from_pretrained(self.model_id)
-        self.model = AutoModelForCausalLM.from_pretrained(
-            self.model_id,
-            torch_dtype=torch.float16,  # fp16 will fit more easily on a single V100 (32 GB)
-            device_map="auto",  # accelerate will place everything on cuda:0
-            low_cpu_mem_usage=True,  # cut down peak CPU RAM requirements
-            # torch_dtype="auto",
-            # # torch_dtype=torch.float32,
-            # device_map={ "": "cpu" }
-        )
-        # self.tokenizer = AutoTokenizer.from_pretrained("roberta-large-mnli")
+        self.tokenizer = TOKENIZER
+        self.model = MODEL
 
     def get_embeddings(self, text):
         return self.model.encode(text, convert_to_tensor=True)
@@ -108,6 +118,8 @@ Do not include explanations. Only return the JSON object.
         device = next(self.model.parameters()).device
         inputs = {k: v.to(device) for k, v in inputs.items()}
 
+        start_time = time.perf_counter()
+
         outputs = self.model.generate(
             **inputs,
             max_new_tokens=200,
@@ -116,6 +128,10 @@ Do not include explanations. Only return the JSON object.
         )
 
         response = self.tokenizer.decode(outputs[0].cpu(), skip_special_tokens=True).strip()
+
+        end_time = time.perf_counter()
+
+        bt.logging.info(f"{ request_id} | {miner_uid} | {statement_url} | processed llm response: {end_time - start_time: .2f} seconds")
 
         # Extract just the model's reply
         return self.extract_llm_response(response)
