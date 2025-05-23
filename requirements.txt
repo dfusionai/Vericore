@@ -1,11 +1,12 @@
-git+https://github.com/opentensor/bittensor.git@v9.1.0
+bittensor==9.6.1
 sanic
 webdriver_manager
 lxml
 openai
-torch
+torch==2.3.0
 pydantic
 transformers
+transformers[torch]
 selenium
 fuzzywuzzy
 sentence-transformers
@@ -18,4 +19,6 @@ httpx[http2]
 tldextract
 certifi
 
+# sudo apt install nvidia-cuda-toolkit
+vllm
 accelerate
