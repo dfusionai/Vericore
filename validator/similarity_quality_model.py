@@ -35,7 +35,7 @@ class SimilarityQualityModel:
       chunks = [" ".join(sentences[i: i + window_size]) for i in range(0, len(sentences), step)]
       return chunks
 
-    def verify_similarity(self, snippet_text: str, context_text: str) :
+    def verify_similarity(self, snippet_text: str, context_text: str, similarity_threshold=SENTENCE_SIMILARITY_THRESHOLD) :
         # Encode both texts
         snippet_embedding = self.model.encode(snippet_text, convert_to_tensor=True)
 
@@ -46,13 +46,13 @@ class SimilarityQualityModel:
         similarities = util.pytorch_cos_sim(snippet_embedding, chunk_embeddings)
         best_score = similarities.max().item()
 
-        return best_score > SENTENCE_SIMILARITY_THRESHOLD, best_score   # Return best match score and decision
+        return best_score > similarity_threshold, best_score   # Return best match score and decision
 
 similarity_quality_model = SimilarityQualityModel()
 model_lock = threading.Lock()
 
-async def verify_text_similarity(snippet_text: str, context_text: str) :
-    return await asyncio.to_thread(similarity_quality_model.verify_similarity, snippet_text, context_text)
+async def verify_text_similarity(snippet_text: str, context_text: str, similarity_threshold=SENTENCE_SIMILARITY_THRESHOLD) :
+    return await asyncio.to_thread(similarity_quality_model.verify_similarity, snippet_text, context_text, similarity_threshold)
 
 async def main(snippet_text:str, context_text:str):
     score = await verify_text_similarity(snippet_text, context_text)
