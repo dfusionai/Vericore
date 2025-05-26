@@ -140,6 +140,7 @@ class SnippetValidator:
         self,
         request_id: str,
         miner_uid: int,
+        domain: str,
         original_statement: str,
         miner_evidence: SourceEvidence
     ):
@@ -165,7 +166,7 @@ class SnippetValidator:
                 vericore_miner_response = VericoreStatementResponse(
                     url=miner_evidence.url,
                     excerpt=miner_evidence.excerpt,
-                    domain='',
+                    domain=domain,
                     snippet_found=False,
                     local_score=0.0,
                     snippet_score=snippet_score,
@@ -191,7 +192,7 @@ class SnippetValidator:
             vericore_miner_response = VericoreStatementResponse(
                 url=miner_evidence.url,
                 excerpt=miner_evidence.excerpt,
-                domain='',
+                domain=domain,
                 snippet_found=False,
                 local_score=0.0,
                 snippet_score=snippet_score,
@@ -307,6 +308,7 @@ class SnippetValidator:
             response = await self.validate_miner_query_params(
                 request_id,
                 miner_uid,
+                domain,
                 original_statement,
                 miner_evidence
             )
