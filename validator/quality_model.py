@@ -58,7 +58,9 @@ class VeridexQualityModel:
             prob_neutral = probs_tensor[1].item()
             prob_entail = probs_tensor[2].item()
 
-        local_score = (prob_contra + prob_entail) - (prob_neutral)
+        # local_score = (prob_contra + prob_entail) - (prob_neutral)
+        # don't minus neutrality score
+        local_score = (prob_contra + prob_entail)
         return {
             "contradiction": prob_contra,
             "neutral": prob_neutral,
