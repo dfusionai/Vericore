@@ -144,23 +144,25 @@ class SnippetValidator:
         original_statement: str,
         miner_evidence: SourceEvidence
     ):
-        similarity_query_parameter_threshold = .70
+        similarity_query_parameter_threshold = .30
         query_params = self._extract_query_string(miner_evidence.url)
         if query_params is None:
             return None
 
         # check whether query params is the same as the excerpt
         for key, values in query_params.items():
-            bt.logging.info(f"{request_id} | {miner_uid} | {miner_evidence.url} | {unquote(values[0])} | {miner_evidence.excerpt} | Checking query parameters")
+            # bt.logging.info(f"{request_id} | {miner_uid} | {miner_evidence.url} | {unquote(values[0])} | {miner_evidence.excerpt} | Checking query parameters")
+            #
+            # is_similar_excerpt, statement_similarity_score,  = await self.is_snippet_similar_to_statement(
+            #     request_id, miner_uid, miner_evidence.url, miner_evidence.excerpt, unquote(values[0]), similarity_query_parameter_threshold
+            # )
+            #
+            # bt.logging.info(f"{request_id} | {miner_uid} | {miner_evidence.url} | {values[0]} | {miner_evidence.excerpt} | Is similar to query parameter: {is_similar_excerpt}, {statement_similarity_score}")
+            #
+            # # Using search as evidence - 5
+            # if is_similar_excerpt:
 
-            is_similar_excerpt, statement_similarity_score,  = await self.is_snippet_similar_to_statement(
-                request_id, miner_uid, miner_evidence.url, miner_evidence.excerpt, unquote(values[0]), similarity_query_parameter_threshold
-            )
-
-            bt.logging.info(f"{request_id} | {miner_uid} | {miner_evidence.url} | {values[0]} | {miner_evidence.excerpt} | Is similar to query parameter: {is_similar_excerpt}, {statement_similarity_score}")
-
-            # Using search as evidence - 5
-            if is_similar_excerpt:
+            if True:
                 bt.logging.info(f"{request_id} | {miner_uid} | {miner_evidence.url} | {values[0]} | Query Parameter Excerpt is the SAME")
                 snippet_score = USING_SEARCH_AS_EVIDENCE
                 vericore_miner_response = VericoreStatementResponse(
