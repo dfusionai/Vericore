@@ -325,13 +325,18 @@ class APIQueryHandler:
             # Process Vericore response data
             bt.logging.info(f"{request_id} | {miner_uid} | Verifying Miner Statements. Received {len(miner_response.synapse.veridex_response)} responses. Only Processing {MAX_MINER_RESPONSES}")
 
+            bt.logging.info(
+                f"***** TEST *********** | original statement: {statement} | miner_synapse_statement {miner_response.synapse.statement}")
+
+            time.sleep(5)
+
             # Create tasks
             validator = SnippetValidator()
             tasks = [
                 validator.validate_miner_snippet(
                     request_id=request_id,
                     miner_uid=miner_uid,
-                    original_statement=miner_response.synapse.statement,
+                    original_statement=statement,
                     miner_evidence=miner_vericore_response
                 ) for miner_vericore_response in miner_response.synapse.veridex_response[:MAX_MINER_RESPONSES]
             ]
