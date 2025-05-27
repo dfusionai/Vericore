@@ -50,13 +50,14 @@ class VeridexQualityModel:
         )
         inputs = {k: v.to(self.device) for k, v in inputs.items()}
 
-        with torch.no_grad():
-            logits = self.model(**inputs).logits
-            # logits.shape = [batch_size, 3]
-            probs_tensor = torch.softmax(logits, dim=-1)[0]  # [3]
-            prob_contra = probs_tensor[0].item()
-            prob_neutral = probs_tensor[1].item()
-            prob_entail = probs_tensor[2].item()
+        with model_lock:
+            with torch.no_grad():
+                logits = self.model(**inputs).logits
+                # logits.shape = [batch_size, 3]
+                probs_tensor = torch.softmax(logits, dim=-1)[0]  # [3]
+                prob_contra = probs_tensor[0].item()
+                prob_neutral = probs_tensor[1].item()
+                prob_entail = probs_tensor[2].item()
 
         # local_score = (prob_contra + prob_entail) - (prob_neutral)
         # don't minus neutrality score
@@ -109,7 +110,7 @@ model_lock = threading.Lock()
 async def score_statement_snippets(statement: str, snippet_texts: list) -> (float, list):
     return await asyncio.to_thread(verify_quality_model.score_statement_snippets, statement, snippet_texts)
 
-async def score_statement_distribution(statement: str, snippet: str):
+async def score_statement_distribution(statement: str, snippet: str) -> (float, list):
     return await asyncio.to_thread(verify_quality_model.score_pair_distrib,statement, snippet)
 
 async def main(statement:str, snippet: str):
@@ -127,8 +128,8 @@ async def main(statement:str, snippet: str):
 # ({'contradiction': 0.8573225736618042, 'neutral': 0.12920480966567993, 'entailment': 0.013472586870193481}, 0.7415903508663177)
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run Quality Model.")
-    parser.add_argument("--statement", type=str, default="Dinosaur existed", help="Dinosaur existed")
-    parser.add_argument("--snippet", type=str, default="Dinosaur existed in the Jurassic Period", help="Dinosaur existed in the Jurassic Period")
+    parser.add_argument("--statement", type=str, default="The blue whale's tongue can weigh as much as an elephant, underscoring the immense size of the largest animal on Earth.", help="Dinosaur existed")
+    parser.add_argument("--snippet", type=str, default="The ostrich, Earth's largest bird, stands out with a unique foot structure. Unlike flying birds with four toes, or other flightless birds with three, the ostrich is singular in possessing two toes per foot. Remarkably, one substantial toe resembling a hoof bears the bird's weight, while a smaller toe aids in balance", help="Dinosaur existed in the Jurassic Period")
     args = parser.parse_args()
 
     asyncio.run(main(args.statement, args.snippet))

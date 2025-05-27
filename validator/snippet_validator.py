@@ -9,7 +9,7 @@ from urllib.parse import urlparse, parse_qs, unquote
 from shared.exceptions import InsecureProtocolError
 from shared.top_site_cache import is_approved_site
 from shared.veridex_protocol import SourceEvidence, VericoreStatementResponse
-# from validator.context_similarity_validator import calculate_similarity_score
+from validator.context_similarity_validator import calculate_similarity_score
 from validator.domain_validator import domain_is_recently_registered
 from validator.quality_model import score_statement_distribution
 from validator.snippet_fetcher import fetch_entire_page
@@ -414,12 +414,12 @@ class SnippetValidator:
                 snippet=miner_evidence.excerpt
             )
 
-            context_similarity_score = 1
+            # context_similarity_score = 1
 
-            # context_similarity_score = calculate_similarity_score(
-            #     statement=original_statement.strip(),
-            #     excerpt=miner_evidence.excerpt
-            # )
+            context_similarity_score = calculate_similarity_score(
+                statement=original_statement.strip(),
+                excerpt=miner_evidence.excerpt
+            )
 
             bt.logging.info(
                 f"{request_id} | {miner_uid} | {miner_evidence.url} | Local Score {local_score} | Context similarity: {context_similarity_score} "
