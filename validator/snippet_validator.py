@@ -178,9 +178,9 @@ class SnippetValidator:
         url = miner_evidence.url.rstrip('/')
         decoded_part = url[url.rfind('/') + 1:]
         word_count = len(decoded_part.split())
-        has_punctuation = bool(re.search(r"[.,:;!?]", decoded_part))
+        # has_punctuation = bool(re.search(r"[.,:;!?]", decoded_part))
 
-        if word_count > 3 or has_punctuation:
+        if word_count > 3:
             bt.logging.info(f"{request_id} | {miner_uid} | {miner_evidence.url} | {decoded_part} | Last url search parameter is sentence")
             snippet_score = USING_SEARCH_AS_EVIDENCE
             vericore_miner_response = VericoreStatementResponse(
