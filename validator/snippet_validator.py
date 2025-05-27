@@ -144,7 +144,7 @@ class SnippetValidator:
         original_statement: str,
         miner_evidence: SourceEvidence
     ):
-        similarity_query_parameter_threshold = .88
+        similarity_query_parameter_threshold = .70
         query_params = self._extract_query_string(miner_evidence.url)
         if query_params is None:
             return None
