@@ -26,8 +26,11 @@ from shared.scores import (
     SSL_DOMAIN_REQUIRED,
     APPROVED_URL_MULTIPLIER,
     EXCERPT_TOO_SIMILAR,
-    USING_SEARCH_AS_EVIDENCE
+    USING_SEARCH_AS_EVIDENCE,
+    UNRELATED_PAGE_SNIPPET
 )
+from validator.statement_context_evaluator import assess_statement_async
+
 
 class SnippetValidator:
 
@@ -333,6 +336,30 @@ class SnippetValidator:
             bt.logging.info(
                 f"{request_id} | {miner_uid} | {miner_evidence.url} | Verifying snippet in rendered page"
             )
+
+            assessment_result = await assess_statement_async(
+                request_id=request_id,
+                miner_uid=miner_uid,
+                statement_url=miner_evidence.url,
+                statement=original_statement,
+                webpage=page_text
+            )
+
+            bt.logging.info(
+                f"********** {request_id} | {miner_uid} | {miner_evidence.url} | Assessment Result: {assessment_result} ********** "
+            )
+            if assessment_result["response"] == "UNRELATED":
+                snippet_score = UNRELATED_PAGE_SNIPPET
+                vericore_miner_response = VericoreStatementResponse(
+                    url=miner_evidence.url,
+                    excerpt=miner_evidence.excerpt,
+                    domain=domain,
+                    snippet_found=False,
+                    local_score=0.0,
+                    snippet_score=snippet_score,
+                    snippet_score_reason="unrelated_page_snippet"
+                )
+                return vericore_miner_response
 
             # Verify that the snippet is actually within the provided url
             # #todo - should we split score between url exists and whether the web-page does include the snippet
