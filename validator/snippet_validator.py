@@ -348,7 +348,7 @@ class SnippetValidator:
             bt.logging.info(
                 f"********** {request_id} | {miner_uid} | {miner_evidence.url} | Assessment Result: {assessment_result} ********** "
             )
-            if assessment_result["response"] == "UNRELATED":
+            if assessment_result is not None and assessment_result.get("response") == "UNRELATED":
                 snippet_score = UNRELATED_PAGE_SNIPPET
                 vericore_miner_response = VericoreStatementResponse(
                     url=miner_evidence.url,
