@@ -331,7 +331,7 @@ class APIQueryHandler:
                 validator.validate_miner_snippet(
                     request_id=request_id,
                     miner_uid=miner_uid,
-                    original_statement=miner_response.synapse.statement,
+                    original_statement=statement,
                     miner_evidence=miner_vericore_response
                 ) for miner_vericore_response in miner_response.synapse.veridex_response[:MAX_MINER_RESPONSES]
             ]
@@ -448,20 +448,24 @@ class APIQueryHandler:
         synapse = VericoreSynapse(
             statement=statement, sources=sources, request_id=request_id
         )
-        # responses = await asyncio.gather(
-        #     *[
-        #         asyncio.create_task(
-        #             self.process_miner_request(request_id, neuron, synapse, statement, is_test, is_nonsense)
-        #         )
-        #         for neuron in subset_miners
-        #     ]
-        # )
+
         responses = await asyncio.gather(
             *[
                 self.process_miner_request(request_id, selected_miner.neuron_info, synapse, statement, is_test, is_nonsense)
                 for selected_miner in subset_miners
             ]
         )
+        # responses = []
+        # for selected_miner in subset_miners:
+        #     response = await self.process_miner_request(
+        #         request_id,
+        #         selected_miner.neuron_info,
+        #         synapse,
+        #         statement,
+        #         is_test,
+        #         is_nonsense
+        #     )
+        #     responses.append(response)
         # update scores
 
         bt.logging.info(f"{request_id} | Completed all miner requests")

@@ -1,10 +1,7 @@
 import argparse
 import asyncio
-import sys
-import bittensor as bt
-
-from sentence_transformers import SentenceTransformer, util
 import threading
+from sentence_transformers import SentenceTransformer, util
 
 SENTENCE_SIMILARITY_THRESHOLD = 0.95
 
@@ -43,7 +40,9 @@ class SimilarityQualityModel:
 
         chunk_embeddings = self.model.encode(chunks, convert_to_tensor=True)
 
-        similarities = util.pytorch_cos_sim(snippet_embedding, chunk_embeddings)
+        with model_lock:
+          similarities = util.pytorch_cos_sim(snippet_embedding, chunk_embeddings)
+
         best_score = similarities.max().item()
 
         return best_score > similarity_threshold, best_score   # Return best match score and decision
