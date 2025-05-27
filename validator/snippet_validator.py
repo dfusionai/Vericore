@@ -136,6 +136,13 @@ class SnippetValidator:
             )
             return False
 
+    def get_last_meaningful_url_part(self, url: str):
+        parsed = urlparse(url)
+        path_parts = [part for part in parsed.path.split('/') if part]
+        if not path_parts:
+            return ''
+        return unquote_plus(path_parts[-1])
+
     async def validate_miner_query_params(
         self,
         request_id: str,
@@ -175,13 +182,12 @@ class SnippetValidator:
                 )
                 return vericore_miner_response
 
-        url = miner_evidence.url.rstrip('/')
-        decoded_part = url[url.rfind('/') + 1:]
-        word_count = len(decoded_part.split())
+        last_url_part  = self.get_last_meaningful_url_part(miner_evidence.url)
+        word_count = len(last_url_part.split())
         # has_punctuation = bool(re.search(r"[.,:;!?]", decoded_part))
 
         if word_count > 3:
-            bt.logging.info(f"{request_id} | {miner_uid} | {miner_evidence.url} | {decoded_part} | Last url search parameter is sentence")
+            bt.logging.info(f"{request_id} | {miner_uid} | {miner_evidence.url} | {last_url_part} | Last url search parameter is sentence")
             snippet_score = USING_SEARCH_AS_EVIDENCE
             vericore_miner_response = VericoreStatementResponse(
                 url=miner_evidence.url,
