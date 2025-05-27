@@ -456,12 +456,23 @@ class APIQueryHandler:
         #         for neuron in subset_miners
         #     ]
         # )
-        responses = await asyncio.gather(
-            *[
-                self.process_miner_request(request_id, selected_miner.neuron_info, synapse, statement, is_test, is_nonsense)
-                for selected_miner in subset_miners
-            ]
-        )
+        # responses = await asyncio.gather(
+        #     *[
+        #         self.process_miner_request(request_id, selected_miner.neuron_info, synapse, statement, is_test, is_nonsense)
+        #         for selected_miner in subset_miners
+        #     ]
+        # )
+        responses = []
+        for selected_miner in subset_miners:
+            response = await self.process_miner_request(
+                request_id,
+                selected_miner.neuron_info,
+                synapse,
+                statement,
+                is_test,
+                is_nonsense
+            )
+            responses.append(response)
         # update scores
 
         bt.logging.info(f"{request_id} | Completed all miner requests")
