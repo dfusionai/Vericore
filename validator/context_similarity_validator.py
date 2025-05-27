@@ -1,15 +1,12 @@
 import queue
 import argparse
 from sentence_transformers import SentenceTransformer, util
-from transformers import AutoTokenizer, AutoModel
 
 MAX_VALIDATOR_THREADS = 10
 
 class ContextSimilarityValidator:
 
     def __init__(self):
-        self.tokenizer = AutoTokenizer.from_pretrained("roberta-large-mnli")
-        # self.model = AutoModelForSequenceClassification.from_pretrained("roberta-large-mnli")
         self.model = SentenceTransformer('sentence-transformers/all-mpnet-base-v2')
 
     def get_embeddings(self, text):
@@ -50,7 +47,7 @@ def main(statement:str, snippet: str):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run Quality Model.")
-    parser.add_argument("--statement", type=str, default="The tongue of a giant anteater can extend up to 16 inches (40 centimeters) long, allowing it to reach deep into ant and termite mounds to feed on its favorite prey.", help="Dinosaur existed")
-    parser.add_argument("--snippet", type=str, default="he transformative power of financial literacy education cannot be overstated, offering immense benefits that extend well beyond simple money management. By instilling crucial financial skills at an early age, financial literacy workshops empower children and teenagers to make informed decisions that will serve them throughout their lives.")
+    parser.add_argument("--statement", type=str, default="The lifespan of a typical housefly is about 15 to 30 days, depending on environmental conditions, illustrating the brevity of life for many insects.", help="Dinosaur existed")
+    parser.add_argument("--snippet", type=str, default="Ethereum is a decentralized blockchain")
     args = parser.parse_args()
     main(args.statement, args.snippet)
