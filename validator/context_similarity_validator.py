@@ -1,15 +1,12 @@
 import queue
 import argparse
 from sentence_transformers import SentenceTransformer, util
-from transformers import AutoTokenizer, AutoModel
 
 MAX_VALIDATOR_THREADS = 10
 
 class ContextSimilarityValidator:
 
     def __init__(self):
-        self.tokenizer = AutoTokenizer.from_pretrained("roberta-large-mnli")
-        # self.model = AutoModelForSequenceClassification.from_pretrained("roberta-large-mnli")
         self.model = SentenceTransformer('sentence-transformers/all-mpnet-base-v2')
 
     def get_embeddings(self, text):
