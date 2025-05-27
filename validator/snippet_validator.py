@@ -182,23 +182,26 @@ class SnippetValidator:
                 )
                 return vericore_miner_response
 
-        last_url_part  = self.get_last_meaningful_url_part(miner_evidence.url)
-        word_count = len(last_url_part.split())
-        # has_punctuation = bool(re.search(r"[.,:;!?]", decoded_part))
+        parsed = urlparse(miner_evidence.url)
+        path_parts = [unquote_plus(part.strip()) for part in parsed.path.split('/') if part]
 
-        if word_count > 3:
-            bt.logging.info(f"{request_id} | {miner_uid} | {miner_evidence.url} | {last_url_part} | Last url search parameter is sentence")
-            snippet_score = USING_SEARCH_AS_EVIDENCE
-            vericore_miner_response = VericoreStatementResponse(
-                url=miner_evidence.url,
-                excerpt=miner_evidence.excerpt,
-                domain=domain,
-                snippet_found=False,
-                local_score=0.0,
-                snippet_score=snippet_score,
-                snippet_score_reason="using_search_as_evidence",
-            )
-            return vericore_miner_response
+        for part in path_parts:
+            word_count = len(part.split())
+            # has_punctuation = bool(re.search(r"[.,:;!?]", decoded_part))
+
+            if word_count > 3:
+                bt.logging.info(f"{request_id} | {miner_uid} | {miner_evidence.url} | {part} | Last url search parameter is sentence")
+                snippet_score = USING_SEARCH_AS_EVIDENCE
+                vericore_miner_response = VericoreStatementResponse(
+                    url=miner_evidence.url,
+                    excerpt=miner_evidence.excerpt,
+                    domain=domain,
+                    snippet_found=False,
+                    local_score=0.0,
+                    snippet_score=snippet_score,
+                    snippet_score_reason="using_search_as_evidence",
+                )
+                return vericore_miner_response
 
 
     async def validate_miner_snippet(
