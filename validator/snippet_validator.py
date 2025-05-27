@@ -4,7 +4,7 @@ import tldextract
 import ipaddress
 import re
 import os
-from urllib.parse import urlparse, parse_qs, unquote
+from urllib.parse import urlparse, parse_qs, unquote_plus
 
 from shared.exceptions import InsecureProtocolError
 from shared.top_site_cache import is_approved_site
@@ -144,7 +144,6 @@ class SnippetValidator:
         original_statement: str,
         miner_evidence: SourceEvidence
     ):
-        similarity_query_parameter_threshold = .30
         query_params = self._extract_query_string(miner_evidence.url)
         if query_params is None:
             return None
@@ -177,19 +176,12 @@ class SnippetValidator:
                 return vericore_miner_response
 
         url = miner_evidence.url.rstrip('/')
-        last_url_part = url[url.rfind('/') + 1:]
+        decoded_part = url[url.rfind('/') + 1:]
+        word_count = len(decoded_part.split())
+        has_punctuation = bool(re.search(r"[.,:;!?]", decoded_part))
 
-        bt.logging.info(f"{request_id} | {miner_uid} | {miner_evidence.url} | {last_url_part} | Checking last url search parameter")
-
-        is_similar_excerpt, statement_similarity_score, = await self.is_snippet_similar_to_statement(
-            request_id, miner_uid, miner_evidence.url, miner_evidence.excerpt, unquote(last_url_part), similarity_query_parameter_threshold
-        )
-
-        bt.logging.info(f"{request_id} | {miner_uid} | {miner_evidence.url} | {last_url_part} | Is Similar {is_similar_excerpt} | Similarity excerpt percentage: {statement_similarity_score}")
-
-        # Using search as evidence - 5
-        if is_similar_excerpt:
-            bt.logging.info(f"{request_id} | {miner_uid} | {miner_evidence.url} | {last_url_part} | Last url search parameter the same as excerpt")
+        if word_count > 3 or has_punctuation:
+            bt.logging.info(f"{request_id} | {miner_uid} | {miner_evidence.url} | {decoded_part} | Last url search parameter is sentence")
             snippet_score = USING_SEARCH_AS_EVIDENCE
             vericore_miner_response = VericoreStatementResponse(
                 url=miner_evidence.url,
@@ -201,39 +193,6 @@ class SnippetValidator:
                 snippet_score_reason="using_search_as_evidence",
             )
             return vericore_miner_response
-
-    async def validate_miner_url_parameters(
-        self,
-        request_id: str,
-        miner_uid: int,
-        original_statement: str,
-        miner_evidence: SourceEvidence
-    ):
-        query_params = self._extract_query_string(miner_evidence.url)
-        if query_params is None:
-            return None
-
-        # check whether query params is the same as the excerpt
-        for key, values in query_params.items():
-            bt.logging.info(f"{request_id} | {miner_uid} | {miner_evidence.url} | {values[0]} | Checking query parameters")
-
-            is_similar_excerpt, statement_similarity_score,  = await self.is_snippet_similar_to_statement(
-                request_id, miner_uid, miner_evidence.url, miner_evidence.excerpt, unquote(values[0])
-            )
-            # Using search as evidence - 5
-            if is_similar_excerpt:
-                bt.logging.info(f"{request_id} | {miner_uid} | {miner_evidence.url} | {values[0]} | Query Parameter Excerpt is the SAME")
-                snippet_score = USING_SEARCH_AS_EVIDENCE
-                vericore_miner_response = VericoreStatementResponse(
-                    url=miner_evidence.url,
-                    excerpt=miner_evidence.excerpt,
-                    domain='',
-                    snippet_found=False,
-                    local_score=0.0,
-                    snippet_score=snippet_score,
-                    snippet_score_reason="using_search_as_evidence",
-                )
-                return vericore_miner_response
 
 
     async def validate_miner_snippet(
