@@ -41,18 +41,40 @@ class VLLMChatHandler:
 # Global singleton
 global_handler = VLLMChatHandler()
 
-async def assess_statement_async(request_id, miner_uid, statement_url, statement, webpage):
+async def assess_url_as_fake(request_id: str, miner_uid: int, statement_url: str, statement: str, miner_excerpt: str):
+    bt.logging.info(f"{request_id} | {miner_uid} | {statement_url} | Assessing url")
+
+    messages = [
+        {"role": "system", "content": f"""
+        You are a helpful assistant that returns a JSON object only.
+        Return only one line of valid JSON with this exact structure and no explanations:
+        {{"response": "FAKE"}} or {{"response": "VALID"}}
+        Definitions:
+        - FAKE: Mark the URL as FAKE only if at least one of the following is true:
+        * The URL path contains full sentences, long phrases, or multiple consecutive words that exactly match text in the statement or excerpt.
+        * The URL path is excessively long, unnatural, or has suspicious characters such as repeated percent-encoding (e.g., '%20%20%20').
+        * The domain is fabricated, misspelled, or clearly not a legitimate domain (e.g., 'notrealwebsite.xyz').
+        * The URL appears randomly generated or nonsensical (e.g., long alphanumeric strings with no semantic structure).
+        - VALID: Mark the URL as VALID if it looks like a natural URL from a real website, regardless of whether it shares keywords or topics with the statement.
+        Return:{{"response": "FAKE"}} if any of the FAKE conditions are met.
+        Otherwise, return:{{"response": "VALID"}}
+        """
+        },
+        {"role": "user",
+         "content": f""" Url: \"{statement_url}\"\nStatement:\n\"{statement}\"\n"""
+       }
+    ]
+    bt.logging.info(f"{request_id} | {miner_uid} | Assessing url: {messages}")
+    return await global_handler.run(messages)
+
+async def assess_statement_async(request_id: str, miner_uid: int, statement_url: str, statement: str, webpage: str, miner_excerpt: str):
     bt.logging.info(f"{request_id} | {miner_uid} | {statement_url} | Assessing statement")
 
     messages = [
         {"role": "system", "content": f"""You are a helpful assistant that returns a JSON object only.
         Return only a single line of valid JSON with this exact structure and no explanation or formatting:
-{{"response": "SUPPORT", "score_pair_distrib": {{ "contradiction": 0.04,   "neutral": 0.10,   "entailment": 0.86  }} }}
+{{"response": "SUPPORT"  }}
 - response: One of "SUPPORT", "CONTRADICT", or "UNRELATED".
-- score_pair_distrib: Three floats between 0 and 1 that sum to 1. Compute the probability distribution over [contradiction, neutral, entailment]:
-  - contradiction: the likelihood that the statement contradicts the webpage.
-  - neutral: the likelihood that the statement is neither supported nor contradicted.
-  - entailment: the likelihood that the statement is supported or entailed by the webpage.
 
 Definitions:
 - SUPPORT: The webpage clearly agrees with or provides evidence for the statement.
@@ -62,7 +84,7 @@ Definitions:
 Do not include explanations. Only return the JSON object.
 """
                                       },
-        {"role": "user", "content": f"Webpage:\n\"{webpage[:1500]}\"\n\nStatement:\n\"{statement}\"\n\n"},
+        {"role": "user", "content": f"Webpage:\n\"{webpage[:1500]}\"\n\nStatement:\n\"{statement}\"\n\n\"Page Excerpt:\n\"{miner_excerpt}\"\n\n"},
     ]
     return await global_handler.run(messages)
 

@@ -27,9 +27,10 @@ from shared.scores import (
     APPROVED_URL_MULTIPLIER,
     EXCERPT_TOO_SIMILAR,
     USING_SEARCH_AS_EVIDENCE,
-    UNRELATED_PAGE_SNIPPET
+    UNRELATED_PAGE_SNIPPET,
+    FAKE_MINER_URL
 )
-from validator.statement_context_evaluator import assess_statement_async
+from validator.statement_context_evaluator import assess_statement_async, assess_url_as_fake
 
 
 class SnippetValidator:
@@ -206,6 +207,27 @@ class SnippetValidator:
                 )
                 return vericore_miner_response
 
+        # llm_response = await assess_url_as_fake(
+        #     request_id,
+        #     miner_uid,
+        #     miner_evidence.url,
+        #     original_statement,
+        #     miner_evidence.excerpt
+        # )
+        #
+        # if llm_response is not None and llm_response.get("response") == "FAKE":
+        #     bt.logging.info(f"{request_id} | {miner_uid} | {miner_evidence.url} | FAKE Url detected by LLM")
+        #     snippet_score = FAKE_MINER_URL
+        #     vericore_miner_response = VericoreStatementResponse(
+        #         url=miner_evidence.url,
+        #         excerpt=miner_evidence.excerpt,
+        #         domain=domain,
+        #         snippet_found=False,
+        #         local_score=0.0,
+        #         snippet_score=snippet_score,
+        #         snippet_score_reason="fake_url_response",
+        #     )
+        #     return vericore_miner_response
 
     async def validate_miner_snippet(
         self,
@@ -342,7 +364,8 @@ class SnippetValidator:
                 miner_uid=miner_uid,
                 statement_url=miner_evidence.url,
                 statement=original_statement,
-                webpage=page_text
+                webpage=page_text,
+                miner_excerpt=miner_evidence.excerpt,
             )
 
             bt.logging.info(
