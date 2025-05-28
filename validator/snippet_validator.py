@@ -6,6 +6,7 @@ import re
 import os
 from urllib.parse import urlparse, parse_qs, unquote_plus
 
+from shared.blacklisted_url import BLACKLISTED_URL
 from shared.exceptions import InsecureProtocolError
 from shared.top_site_cache import is_approved_site
 from shared.veridex_protocol import SourceEvidence, VericoreStatementResponse
@@ -28,7 +29,8 @@ from shared.scores import (
     EXCERPT_TOO_SIMILAR,
     USING_SEARCH_AS_EVIDENCE,
     UNRELATED_PAGE_SNIPPET,
-    FAKE_MINER_URL
+    FAKE_MINER_URL,
+    BLACKLISTED_URL_SCORE
 )
 from validator.statement_context_evaluator import assess_statement_async, assess_url_as_fake
 
@@ -260,6 +262,20 @@ class SnippetValidator:
             bt.logging.info(
                 f"{request_id} | {miner_uid} | {miner_evidence.url} | Domain verified"
             )
+
+            # Check if domain is blacklisted
+            if domain in BLACKLISTED_URL:
+                snippet_score = BLACKLISTED_URL_SCORE
+                vericore_miner_response = VericoreStatementResponse(
+                    url=miner_evidence.url,
+                    excerpt=miner_evidence.excerpt,
+                    domain=domain,
+                    snippet_found=False,
+                    local_score=0.0,
+                    snippet_score=snippet_score,
+                    snippet_score_reason="blacklisted_url"
+                )
+                return vericore_miner_response
 
             # check if snippet comes from verified domain
             approved_url_multiplier = 1
