@@ -6,6 +6,7 @@ import re
 import os
 from urllib.parse import urlparse, parse_qs, unquote_plus
 
+from shared.blacklisted_domain_cache import is_blacklisted_domain
 from shared.exceptions import InsecureProtocolError
 from shared.top_site_cache import is_approved_site
 from shared.veridex_protocol import SourceEvidence, VericoreStatementResponse
@@ -26,8 +27,13 @@ from shared.scores import (
     SSL_DOMAIN_REQUIRED,
     APPROVED_URL_MULTIPLIER,
     EXCERPT_TOO_SIMILAR,
-    USING_SEARCH_AS_EVIDENCE
+    USING_SEARCH_AS_EVIDENCE,
+    UNRELATED_PAGE_SNIPPET,
+    FAKE_MINER_URL,
+    BLACKLISTED_URL_SCORE
 )
+from validator.statement_context_evaluator import assess_statement_async, assess_url_as_fake
+
 
 class SnippetValidator:
 
@@ -203,6 +209,27 @@ class SnippetValidator:
                 )
                 return vericore_miner_response
 
+        # llm_response = await assess_url_as_fake(
+        #     request_id,
+        #     miner_uid,
+        #     miner_evidence.url,
+        #     original_statement,
+        #     miner_evidence.excerpt
+        # )
+        #
+        # if llm_response is not None and llm_response.get("response") == "FAKE":
+        #     bt.logging.info(f"{request_id} | {miner_uid} | {miner_evidence.url} | FAKE Url detected by LLM")
+        #     snippet_score = FAKE_MINER_URL
+        #     vericore_miner_response = VericoreStatementResponse(
+        #         url=miner_evidence.url,
+        #         excerpt=miner_evidence.excerpt,
+        #         domain=domain,
+        #         snippet_found=False,
+        #         local_score=0.0,
+        #         snippet_score=snippet_score,
+        #         snippet_score_reason="fake_url_response",
+        #     )
+        #     return vericore_miner_response
 
     async def validate_miner_snippet(
         self,
@@ -235,6 +262,20 @@ class SnippetValidator:
             bt.logging.info(
                 f"{request_id} | {miner_uid} | {miner_evidence.url} | Domain verified"
             )
+
+            # Check if domain is blacklisted
+            if is_blacklisted_domain(request_id=request_id, miner_uid=miner_uid, domain=domain):
+                snippet_score = BLACKLISTED_URL_SCORE
+                vericore_miner_response = VericoreStatementResponse(
+                    url=miner_evidence.url,
+                    excerpt=miner_evidence.excerpt,
+                    domain=domain,
+                    snippet_found=False,
+                    local_score=0.0,
+                    snippet_score=snippet_score,
+                    snippet_score_reason="blacklisted_url"
+                )
+                return vericore_miner_response
 
             # check if snippet comes from verified domain
             approved_url_multiplier = 1
@@ -308,7 +349,6 @@ class SnippetValidator:
                 )
                 return vericore_miner_response
 
-
             bt.logging.info(
                 f"{request_id} | {miner_uid} | {miner_evidence.url} | Fetching page text"
             )
@@ -333,6 +373,31 @@ class SnippetValidator:
             bt.logging.info(
                 f"{request_id} | {miner_uid} | {miner_evidence.url} | Verifying snippet in rendered page"
             )
+
+            # assessment_result = await assess_statement_async(
+            #     request_id=request_id,
+            #     miner_uid=miner_uid,
+            #     statement_url=miner_evidence.url,
+            #     statement=original_statement,
+            #     webpage=page_text,
+            #     miner_excerpt=miner_evidence.excerpt,
+            # )
+            #
+            # bt.logging.info(
+            #     f"********** {request_id} | {miner_uid} | {miner_evidence.url} | Assessment Result: {assessment_result} ********** "
+            # )
+            # if assessment_result is not None and assessment_result.get("response") == "UNRELATED":
+            #     snippet_score = UNRELATED_PAGE_SNIPPET
+            #     vericore_miner_response = VericoreStatementResponse(
+            #         url=miner_evidence.url,
+            #         excerpt=miner_evidence.excerpt,
+            #         domain=domain,
+            #         snippet_found=False,
+            #         local_score=0.0,
+            #         snippet_score=snippet_score,
+            #         snippet_score_reason="unrelated_page_snippet"
+            #     )
+            #     return vericore_miner_response
 
             # Verify that the snippet is actually within the provided url
             # #todo - should we split score between url exists and whether the web-page does include the snippet
