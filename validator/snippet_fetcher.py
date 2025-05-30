@@ -7,7 +7,7 @@ from aiolimiter import AsyncLimiter
 
 import bittensor as bt
 import certifi
-
+from playwright.async_api import async_playwright
 REQUEST_TIMEOUT_SECONDS = 20
 
 
@@ -22,12 +22,19 @@ class SnippetFetcher:
             follow_redirects=True,
             http2=True,
             headers={
-                "User-Agent":(
+                 "User-Agent": (
                     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
                     "AppleWebKit/537.36 (KHTML, like Gecko) "
                     "Chrome/122.0.0.0 Safari/537.36"
                 ),
-                "Accept-Encoding": "gzip, deflate"
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+                "Accept-Language": "en-US,en;q=0.9",
+                "Referer": "https://a-z-animals.com/",
+                "Connection": "keep-alive",
+                "Upgrade-Insecure-Requests": "1",
+                "DNT": "1",
+                "Cache-Control": "no-cache",
+                "Pragma": "no-cache"
             },
             timeout=REQUEST_TIMEOUT_SECONDS,  # Adjust as needed
         )
@@ -46,20 +53,48 @@ class SnippetFetcher:
     ):
         start = time.perf_counter()
         try:
-            bt.logging.info(
-                f"{request_id} | {miner_uid} | {endpoint} | Sending request"
-            )
-            response = await self.client.get(
-                endpoint, timeout=REQUEST_TIMEOUT_SECONDS, headers=headers
-            )
+            # bt.logging.info(
+            #     f"{request_id} | {miner_uid} | {endpoint} | Sending request"
+            # )
+            # response = await self.client.get(
+            #     endpoint, timeout=REQUEST_TIMEOUT_SECONDS, headers=headers
+            # )
+            #
+            # duration = time.perf_counter() - start
+            #
+            # bt.logging.info(
+            #     f"{request_id} | {miner_uid} | {endpoint} | Received response {response.status_code} | {duration:.4f} seconds"
+            # )
+            #
+            # return response
+            async with async_playwright() as p:
+                browser = await p.chromium.launch(
+                    headless=True,  # Makes it more like a real user
+                    args=[
+                        "--disable-blink-features=AutomationControlled",
+                        "--no-sandbox",
+                        "--disable-dev-shm-usage",
+                        "--disable-gpu"
+                    ]
+                )
+                context = await browser.new_context(
+                    user_agent=(
+                        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                        "AppleWebKit/537.36 (KHTML, like Gecko) "
+                        "Chrome/122.0.0.0 Safari/537.36"
+                    ),
+                    viewport={ "width": 1280, "height": 800 }
+                )
+                page = await context.new_page()
+                await page.goto(endpoint, wait_until="domcontentloaded", timeout=60000)
+                html = await page.content()
+                await browser.close()
+                duration = time.perf_counter() - start
+                bt.logging.info(
+                    f"{request_id} | {miner_uid} | {endpoint} | Received response web-page text | {duration:.4f} seconds"
+                )
+                return html if html else ""
 
-            duration = time.perf_counter() - start
-
-            bt.logging.info(
-                f"{request_id} | {miner_uid} | {endpoint} | Received response {response.status_code} | {duration:.4f} seconds"
-            )
-
-            return response
         except Exception as e:
             duration = time.perf_counter() - start
             bt.logging.warning(
@@ -97,12 +132,16 @@ class SnippetFetcher:
                 request_id, miner_uid, url
             )  # requests.get(url, headers=headers)
 
-            if response is None or response.status_code != 200:
-                bt.logging.info(f"{request_id} | {miner_uid} | {url} | Returning empty html")
-                return ""
+            # if response is None or response.status_code != 200:
+            #     bt.logging.info(f"{request_id} | {miner_uid} | {url} | Returning empty html")
+            #     return ""
+
+            # cleaned_html: str = await self.clean_html(
+            #     request_id, miner_uid, url, response.text
+            # )
 
             cleaned_html: str = await self.clean_html(
-                request_id, miner_uid, url, response.text
+                request_id, miner_uid, url, response
             )
 
             duration = time.perf_counter() - start
