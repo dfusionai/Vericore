@@ -30,7 +30,8 @@ from shared.scores import (
     USING_SEARCH_AS_EVIDENCE,
     UNRELATED_PAGE_SNIPPET,
     FAKE_MINER_URL,
-    BLACKLISTED_URL_SCORE
+    BLACKLISTED_URL_SCORE,
+    INVALID_SNIPPET_EXCERPT
 )
 from validator.statement_context_evaluator import assess_statement_async, assess_url_as_fake
 
@@ -231,6 +232,86 @@ class SnippetValidator:
         #     )
         #     return vericore_miner_response
 
+    # Validates provided miner url
+    async def validate_miner_url(
+        self,
+        request_id: str,
+        miner_uid: int,
+        original_statement: str,
+        domain: str,
+        miner_evidence: SourceEvidence
+    ) -> VericoreStatementResponse | None:
+
+        # Check if domain is blacklisted
+        if is_blacklisted_domain(request_id=request_id, miner_uid=miner_uid, domain=domain):
+            snippet_score = BLACKLISTED_URL_SCORE
+            return VericoreStatementResponse(
+                url=miner_evidence.url,
+                excerpt=miner_evidence.excerpt,
+                domain=domain,
+                snippet_found=False,
+                local_score=0.0,
+                snippet_score=snippet_score,
+                snippet_score_reason="blacklisted_url"
+            )
+
+        # check if url has query string and excerpt same as query string
+        response = await self.validate_miner_query_params(
+            request_id,
+            miner_uid,
+            domain,
+            original_statement,
+            miner_evidence
+        )
+
+        if response is not None:
+            return response
+
+        # Dont score if domain was registered within 30 days.
+        domain_registered_recently = await domain_is_recently_registered(domain)
+
+        bt.logging.info(
+            f"{request_id} | {miner_uid} | {miner_evidence.url} | Is domain registered recently: {domain_registered_recently}"
+        )
+        if domain_registered_recently:
+            snippet_score = DOMAIN_REGISTERED_RECENTLY
+            return VericoreStatementResponse(
+                url=miner_evidence.url,
+                excerpt=miner_evidence.excerpt,
+                domain=domain,
+                snippet_found=False,
+                local_score=0.0,
+                snippet_score=snippet_score,
+                snippet_score_reason="domain_is_recently_registered"
+            )
+
+    def is_valid_separator_sentence(self, sentence):
+        if not sentence:
+            return False
+
+            # Start with alphanumeric
+        if not sentence[0].isalnum():
+            return False
+
+            # End with alphanumeric or valid punctuation
+        if not re.search(r'[A-Za-z0-9]$|(\.\.\.|[.!?])$', sentence):
+            return False
+
+            # At least 2 words
+        words = sentence.strip().split()
+        if len(words) < 2:
+            return False
+
+        for word in words:
+            clean = re.sub(r'[.!?]+$', '', word)
+
+            # Count number of special chars (non-alnum, non-space)
+            special_chars = re.findall(r'[^\w]', clean)
+            if len(special_chars) > 2:
+                return False
+
+        return True
+
     async def validate_miner_snippet(
         self,
         request_id: str,
@@ -263,18 +344,14 @@ class SnippetValidator:
                 f"{request_id} | {miner_uid} | {miner_evidence.url} | Domain verified"
             )
 
-            # Check if domain is blacklisted
-            if is_blacklisted_domain(request_id=request_id, miner_uid=miner_uid, domain=domain):
-                snippet_score = BLACKLISTED_URL_SCORE
-                vericore_miner_response = VericoreStatementResponse(
-                    url=miner_evidence.url,
-                    excerpt=miner_evidence.excerpt,
-                    domain=domain,
-                    snippet_found=False,
-                    local_score=0.0,
-                    snippet_score=snippet_score,
-                    snippet_score_reason="blacklisted_url"
-                )
+            vericore_miner_response = await self.validate_miner_url(
+                request_id=request_id,
+                miner_uid=miner_uid,
+                original_statement=original_statement,
+                domain=domain,
+                miner_evidence=miner_evidence
+            )
+            if vericore_miner_response is not None:
                 return vericore_miner_response
 
             # check if snippet comes from verified domain
@@ -315,17 +392,18 @@ class SnippetValidator:
                 )
                 return vericore_miner_response
 
-            # check if url has query string and excerpt same as query string
-            response = await self.validate_miner_query_params(
-                request_id,
-                miner_uid,
-                domain,
-                original_statement,
-                miner_evidence
-            )
-
-            if response is not None:
-                return response
+            # Invalid excerpt - Score: -5
+            if not self.is_valid_separator_sentence(snippet_str):
+                snippet_score = INVALID_SNIPPET_EXCERPT
+                return VericoreStatementResponse(
+                    url=miner_evidence.url,
+                    excerpt=miner_evidence.excerpt,
+                    domain=domain,
+                    snippet_found=False,
+                    local_score=0.0,
+                    snippet_score=snippet_score,
+                    snippet_score_reason="invalid_excerpt"
+                )
 
             bt.logging.info(f"{request_id} | {miner_uid} | {miner_evidence.url} | Is snippet in same context as statement")
 
