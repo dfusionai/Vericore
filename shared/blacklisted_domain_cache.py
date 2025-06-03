@@ -1,12 +1,16 @@
 import bittensor as bt
 import requests
+import time
 from shared.environment_variables import DASHBOARD_API_URL
+
+REFRESH_BLACKLISTED_DOMAIN_TIMEOUT = 60 * 60 # one hour
 
 class BlacklistedDomainCache:
     def __init__(self):
         dashboard_api_url = DASHBOARD_API_URL
         self.url = f"{dashboard_api_url}/blacklisted-domains"
         self.cache = self.fetch_blacklisted_domains()
+        self.time_refreshed = None
 
 
     def fetch_blacklisted_domains(self) :
@@ -21,11 +25,17 @@ class BlacklistedDomainCache:
     def get_cache(self):
         return self.cache
 
+    def requires_refresh(self) -> bool:
+        if blacklisted_domain_cache.cache is None:
+            return True
+
+        return self.time_refreshed is None or self.time_refreshed + REFRESH_BLACKLISTED_DOMAIN_TIMEOUT > time.time()
 
 blacklisted_domain_cache = BlacklistedDomainCache()
 
 def get_blacklisted_domain_cache_data():
-    if blacklisted_domain_cache.cache is None:
+    if blacklisted_domain_cache.requires_refresh():
+        bt.logging.info("Refreshing blacklisted domains cache")
         blacklisted_domain_cache.cache = blacklisted_domain_cache.fetch_blacklisted_domains()
 
     return blacklisted_domain_cache.cache
