@@ -37,7 +37,7 @@ from shared.scores import (
 from validator.statement_context_evaluator import assess_statement_async, assess_url_as_fake
 from validator.web_page_validator import is_search_web_page
 
-MIN_SNIPPET_CONTEXT_SIMILARITY_SCORE = .7
+MIN_SNIPPET_CONTEXT_SIMILARITY_SCORE = .65
 
 class SnippetValidator:
 
@@ -541,6 +541,7 @@ class SnippetValidator:
                     local_score=0.0,
                     snippet_score=snippet_score,
                     snippet_score_reason="snippet_not_context_similar",
+                    context_similarity_score=context_similarity_score,
                     page_text=""
                 )
 
