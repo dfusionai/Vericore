@@ -549,7 +549,6 @@ class SnippetValidator:
                 statement=original_statement.strip(),
                 snippet=miner_evidence.excerpt
             )
-            context_similarity_score = 1
 
             vericore_miner_response = VericoreStatementResponse(
                 url=miner_evidence.url,
