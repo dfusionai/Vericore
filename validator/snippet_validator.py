@@ -31,10 +31,13 @@ from shared.scores import (
     UNRELATED_PAGE_SNIPPET,
     FAKE_MINER_URL,
     BLACKLISTED_URL_SCORE,
-    INVALID_SNIPPET_EXCERPT
+    INVALID_SNIPPET_EXCERPT,
+    SNIPPET_NOT_CONTEXT_SIMILAR, IS_SEARCH_WEB_PAGE
 )
 from validator.statement_context_evaluator import assess_statement_async, assess_url_as_fake
+from validator.web_page_validator import is_search_web_page
 
+MIN_SNIPPET_CONTEXT_SIMILARITY_SCORE = .65
 
 class SnippetValidator:
 
@@ -286,30 +289,34 @@ class SnippetValidator:
             )
 
     def is_valid_separator_sentence(self, sentence):
-        if not sentence:
-            return False
-
-            # Start with alphanumeric
-        if not sentence[0].isalnum():
-            return False
-
-            # End with alphanumeric or valid punctuation
-        if not re.search(r'[A-Za-z0-9]$|(\.\.\.|[.!?])$', sentence):
-            return False
-
-            # At least 2 words
-        words = sentence.strip().split()
-        if len(words) < 2:
-            return False
-
-        for word in words:
-            clean = re.sub(r'[.!?]+$', '', word)
-
-            # Count number of special chars (non-alnum, non-space)
-            special_chars = re.findall(r'[^\w]', clean)
-            if len(special_chars) > 2:
-                return False
-
+        # if not sentence:
+        #     return False
+        #
+        # sentence = sentence.replace('’', "'").replace('“', '"').replace('”', '"').replace('–', '-').replace('—', '-')
+        #
+        # # Must start with an alphanumeric character
+        # if not sentence[0].isalnum():
+        #     return False
+        #
+        # # Must end with an alphanumeric character or valid punctuation
+        # # if not re.search(r'[A-Za-z0-9]$|(\.\.\.|[.!?])$', sentence):
+        # #     return False
+        #
+        # # Must contain at least two words
+        # words = sentence.strip().split()
+        # if len(words) < 2:
+        #     return False
+        #
+        # # Accept common scientific characters in words
+        # allowed_special_chars = set(".,:^∙()/-×%—'")
+        #
+        # for word in words:
+        #     clean = re.sub(r'[.!?]+$', '', word)  # remove trailing punctuation
+        #     specials = [ch for ch in clean if not ch.isalnum() and ch not in allowed_special_chars]
+        #
+        #     if len(specials) > 0:  # Fail only if *unexpected* specials are found
+        #         return False
+        #
         return True
 
     async def validate_miner_snippet(
@@ -448,6 +455,18 @@ class SnippetValidator:
                 )
                 return vericore_miner_response
 
+            if is_search_web_page(page_text):
+                snippet_score = IS_SEARCH_WEB_PAGE
+                return VericoreStatementResponse(
+                    url=miner_evidence.url,
+                    excerpt=miner_evidence.excerpt,
+                    domain=domain,
+                    snippet_found=False,
+                    local_score=0.0,
+                    snippet_score=snippet_score,
+                    snippet_score_reason="is_search_web_page"
+                )
+
             bt.logging.info(
                 f"{request_id} | {miner_uid} | {miner_evidence.url} | Verifying snippet in rendered page"
             )
@@ -502,40 +521,34 @@ class SnippetValidator:
                 )
                 return vericore_miner_response
 
-            # Dont score if domain was registered within 30 days.
-            domain_registered_recently = await domain_is_recently_registered(domain)
-
-            bt.logging.info(
-                f"{request_id} | {miner_uid} | {miner_evidence.url} | Is domain registered recently: {domain_registered_recently}"
-            )
-            if domain_registered_recently:
-                snippet_score = DOMAIN_REGISTERED_RECENTLY
-                vericore_miner_response = VericoreStatementResponse(
-                    url=miner_evidence.url,
-                    excerpt=miner_evidence.excerpt,
-                    domain=domain,
-                    snippet_found=False,
-                    local_score=0.0,
-                    snippet_score=snippet_score,
-                    snippet_score_reason="domain_is_recently_registered"
-                )
-                return vericore_miner_response
-
-            # Determine whether statement is neutral/corroborated or refuted
-            probs, local_score = await score_statement_distribution(
-                statement=original_statement.strip(),
-                snippet=miner_evidence.excerpt
-            )
-
-            # context_similarity_score = 1
-
             context_similarity_score = calculate_similarity_score(
                 statement=original_statement.strip(),
                 excerpt=miner_evidence.excerpt
             )
 
             bt.logging.info(
-                f"{request_id} | {miner_uid} | {miner_evidence.url} | Local Score {local_score} | Context similarity: {context_similarity_score} "
+                f"{request_id} | {miner_uid} | {miner_evidence.url} | Context similarity: {context_similarity_score} "
+            )
+
+            # Zero score if excerpt isn't context similar to statement
+            if context_similarity_score < MIN_SNIPPET_CONTEXT_SIMILARITY_SCORE:
+                snippet_score = SNIPPET_NOT_CONTEXT_SIMILAR
+                return VericoreStatementResponse(
+                    url=miner_evidence.url,
+                    excerpt=miner_evidence.excerpt,
+                    domain=domain,
+                    snippet_found=False,
+                    local_score=0.0,
+                    snippet_score=snippet_score,
+                    snippet_score_reason="snippet_not_context_similar",
+                    context_similarity_score=context_similarity_score,
+                    page_text=""
+                )
+
+            # Determine whether statement is neutral/corroborated or refuted
+            probs, local_score = await score_statement_distribution(
+                statement=original_statement.strip(),
+                snippet=miner_evidence.excerpt
             )
 
             vericore_miner_response = VericoreStatementResponse(

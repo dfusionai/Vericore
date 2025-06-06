@@ -18,6 +18,8 @@ class BlacklistedDomainCache:
             bt.logging.info(f"VALIDATOR | Fetching blacklisted domains from {self.url}")
             response = requests.get(self.url, timeout=300)
             bt.logging.info(f"VALIDATOR | blacklisted_domains_cache fetched")
+            # set time refreshed
+            self.time_refreshed = time.time()
             return {record["domain"] for record in response.json()}
         except requests.exceptions.RequestException as e:
             bt.logging.error(f"VALIDATOR | Failed to fetch blacklisted domains: {e}")
@@ -37,6 +39,7 @@ def get_blacklisted_domain_cache_data():
     if blacklisted_domain_cache.requires_refresh():
         bt.logging.info("Refreshing blacklisted domains cache")
         blacklisted_domain_cache.cache = blacklisted_domain_cache.fetch_blacklisted_domains()
+
 
     return blacklisted_domain_cache.cache
 
