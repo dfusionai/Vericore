@@ -202,7 +202,7 @@ class SnippetValidator:
             if word_count > 3:
                 bt.logging.info(f"{request_id} | {miner_uid} | {miner_evidence.url} | {part} | Last url search parameter is sentence")
                 snippet_score = USING_SEARCH_AS_EVIDENCE
-                vericore_miner_response = VericoreStatementResponse(
+                return VericoreStatementResponse(
                     url=miner_evidence.url,
                     excerpt=miner_evidence.excerpt,
                     domain=domain,
@@ -211,7 +211,19 @@ class SnippetValidator:
                     snippet_score=snippet_score,
                     snippet_score_reason="using_search_as_evidence",
                 )
-                return vericore_miner_response
+
+            if "%20" in part:
+                bt.logging.info(f"{request_id} | {miner_uid} | {miner_evidence.url} | {part} | Last url search parameter is sentence:%20 ")
+                snippet_score = USING_SEARCH_AS_EVIDENCE
+                return VericoreStatementResponse(
+                    url=miner_evidence.url,
+                    excerpt=miner_evidence.excerpt,
+                    domain=domain,
+                    snippet_found=False,
+                    local_score=0.0,
+                    snippet_score=snippet_score,
+                    snippet_score_reason="using_search_as_evidence:%20",
+                )
 
         # llm_response = await assess_url_as_fake(
         #     request_id,
@@ -289,8 +301,8 @@ class SnippetValidator:
             )
 
     def is_valid_separator_sentence(self, sentence):
-        # if not sentence:
-        #     return False
+        if not sentence:
+            return False
         #
         # sentence = sentence.replace('’', "'").replace('“', '"').replace('”', '"').replace('–', '-').replace('—', '-')
         #
@@ -301,11 +313,14 @@ class SnippetValidator:
         # # Must end with an alphanumeric character or valid punctuation
         # # if not re.search(r'[A-Za-z0-9]$|(\.\.\.|[.!?])$', sentence):
         # #     return False
-        #
-        # # Must contain at least two words
-        # words = sentence.strip().split()
-        # if len(words) < 2:
-        #     return False
+
+        # Must contain at least two words
+        number_of_words = sentence.strip().split()
+        if len(number_of_words) < 3:
+            return False
+
+        return True
+
         #
         # # Accept common scientific characters in words
         # allowed_special_chars = set(".,:^∙()/-×%—'")
@@ -422,7 +437,7 @@ class SnippetValidator:
 
             if is_similar_excerpt:
                 snippet_score = EXCERPT_TOO_SIMILAR
-                vericore_miner_response = VericoreStatementResponse(
+                return VericoreStatementResponse(
                     url=miner_evidence.url,
                     excerpt=miner_evidence.excerpt,
                     domain=domain,
@@ -432,7 +447,6 @@ class SnippetValidator:
                     snippet_score_reason="excerpt_too_similar",
                     statement_similarity_score=statement_similarity_score
                 )
-                return vericore_miner_response
 
             bt.logging.info(
                 f"{request_id} | {miner_uid} | {miner_evidence.url} | Fetching page text"
