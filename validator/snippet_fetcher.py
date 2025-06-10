@@ -88,7 +88,6 @@ class SnippetFetcher:
         Return it as a string.
         """
         # headers = { "User-Agent": "Mozilla/5.0" }  # Mimic a real browser
-
         bt.logging.info(f"{request_id} | {miner_uid} | {url} | Fetching entire page")
         try:
             start = time.perf_counter()
