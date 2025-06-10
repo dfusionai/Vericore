@@ -196,6 +196,19 @@ class SnippetValidator:
         path_parts = [unquote_plus(part.strip()) for part in parsed.path.split('/') if part]
 
         for part in path_parts:
+            if part.lower() == 'search':
+                bt.logging.info(f"{request_id} | {miner_uid} | {miner_evidence.url} | {part} | search is part of url")
+                snippet_score = USING_SEARCH_AS_EVIDENCE
+                return VericoreStatementResponse(
+                    url=miner_evidence.url,
+                    excerpt=miner_evidence.excerpt,
+                    domain=domain,
+                    snippet_found=False,
+                    local_score=0.0,
+                    snippet_score=snippet_score,
+                    snippet_score_reason="using_search_as_evidence",
+                )
+
             word_count = len(part.split())
             # has_punctuation = bool(re.search(r"[.,:;!?]", decoded_part))
 
