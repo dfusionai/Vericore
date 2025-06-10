@@ -1,9 +1,9 @@
-bittensor==9.6.1
+git+https://github.com/opentensor/bittensor.git@v9.1.0
 sanic
 webdriver_manager
 lxml
 openai
-torch==2.3.0
+torch
 pydantic
 transformers
 transformers[torch]
@@ -18,7 +18,3 @@ httpx[http2]
 
 tldextract
 certifi
-
-# sudo apt install nvidia-cuda-toolkit
-vllm
-accelerate
