@@ -6,6 +6,7 @@ import re
 import os
 from urllib.parse import urlparse, parse_qs, unquote_plus
 
+from shared.blacklisted_domain_cache import is_blacklisted_domain
 from shared.exceptions import InsecureProtocolError
 from shared.top_site_cache import is_approved_site
 from shared.veridex_protocol import SourceEvidence, VericoreStatementResponse
@@ -27,8 +28,19 @@ from shared.scores import (
     SSL_DOMAIN_REQUIRED,
     APPROVED_URL_MULTIPLIER,
     EXCERPT_TOO_SIMILAR,
-    USING_SEARCH_AS_EVIDENCE, UNRELATED_SNIPPET_PROVIDED
+    UNRELATED_PAGE_SNIPPET,
+    FAKE_MINER_URL,
+    BLACKLISTED_URL_SCORE,
+    INVALID_SNIPPET_EXCERPT,
+    SNIPPET_NOT_CONTEXT_SIMILAR,
+    IS_SEARCH_WEB_PAGE,
+    USING_SEARCH_AS_EVIDENCE,
+    UNRELATED_SNIPPET_PROVIDED
 )
+from validator.statement_context_evaluator import assess_statement_async, assess_url_as_fake
+from validator.web_page_validator import is_search_web_page
+
+MIN_SNIPPET_CONTEXT_SIMILARITY_SCORE = .65
 
 class SnippetValidator:
 
@@ -187,13 +199,10 @@ class SnippetValidator:
         path_parts = [unquote_plus(part.strip()) for part in parsed.path.split('/') if part]
 
         for part in path_parts:
-            word_count = len(part.split())
-            # has_punctuation = bool(re.search(r"[.,:;!?]", decoded_part))
-
-            if word_count > 3:
-                bt.logging.info(f"{request_id} | {miner_uid} | {miner_evidence.url} | {part} | Last url search parameter is sentence")
+            if part.lower() == 'search':
+                bt.logging.info(f"{request_id} | {miner_uid} | {miner_evidence.url} | {part} | search is part of url")
                 snippet_score = USING_SEARCH_AS_EVIDENCE
-                vericore_miner_response = VericoreStatementResponse(
+                return VericoreStatementResponse(
                     url=miner_evidence.url,
                     excerpt=miner_evidence.excerpt,
                     domain=domain,
@@ -202,8 +211,144 @@ class SnippetValidator:
                     snippet_score=snippet_score,
                     snippet_score_reason="using_search_as_evidence",
                 )
-                return vericore_miner_response
 
+            word_count = len(part.split())
+            # has_punctuation = bool(re.search(r"[.,:;!?]", decoded_part))
+
+            if word_count > 3:
+                bt.logging.info(f"{request_id} | {miner_uid} | {miner_evidence.url} | {part} | Last url search parameter is sentence")
+                snippet_score = USING_SEARCH_AS_EVIDENCE
+                return VericoreStatementResponse(
+                    url=miner_evidence.url,
+                    excerpt=miner_evidence.excerpt,
+                    domain=domain,
+                    snippet_found=False,
+                    local_score=0.0,
+                    snippet_score=snippet_score,
+                    snippet_score_reason="using_search_as_evidence",
+                )
+
+            if "%20" in part:
+                bt.logging.info(f"{request_id} | {miner_uid} | {miner_evidence.url} | {part} | Last url search parameter is sentence:%20 ")
+                snippet_score = USING_SEARCH_AS_EVIDENCE
+                return VericoreStatementResponse(
+                    url=miner_evidence.url,
+                    excerpt=miner_evidence.excerpt,
+                    domain=domain,
+                    snippet_found=False,
+                    local_score=0.0,
+                    snippet_score=snippet_score,
+                    snippet_score_reason="using_search_as_evidence:%20",
+                )
+
+        # llm_response = await assess_url_as_fake(
+        #     request_id,
+        #     miner_uid,
+        #     miner_evidence.url,
+        #     original_statement,
+        #     miner_evidence.excerpt
+        # )
+        #
+        # if llm_response is not None and llm_response.get("response") == "FAKE":
+        #     bt.logging.info(f"{request_id} | {miner_uid} | {miner_evidence.url} | FAKE Url detected by LLM")
+        #     snippet_score = FAKE_MINER_URL
+        #     vericore_miner_response = VericoreStatementResponse(
+        #         url=miner_evidence.url,
+        #         excerpt=miner_evidence.excerpt,
+        #         domain=domain,
+        #         snippet_found=False,
+        #         local_score=0.0,
+        #         snippet_score=snippet_score,
+        #         snippet_score_reason="fake_url_response",
+        #     )
+        #     return vericore_miner_response
+
+    # Validates provided miner url
+    async def validate_miner_url(
+        self,
+        request_id: str,
+        miner_uid: int,
+        original_statement: str,
+        domain: str,
+        miner_evidence: SourceEvidence
+    ) -> VericoreStatementResponse | None:
+
+        # Check if domain is blacklisted
+        if is_blacklisted_domain(request_id=request_id, miner_uid=miner_uid, domain=domain):
+            snippet_score = BLACKLISTED_URL_SCORE
+            return VericoreStatementResponse(
+                url=miner_evidence.url,
+                excerpt=miner_evidence.excerpt,
+                domain=domain,
+                snippet_found=False,
+                local_score=0.0,
+                snippet_score=snippet_score,
+                snippet_score_reason="blacklisted_url"
+            )
+
+        # check if url has query string and excerpt same as query string
+        response = await self.validate_miner_query_params(
+            request_id,
+            miner_uid,
+            domain,
+            original_statement,
+            miner_evidence
+        )
+
+        if response is not None:
+            return response
+
+        # Dont score if domain was registered within 30 days.
+        domain_registered_recently = await domain_is_recently_registered(domain)
+
+        bt.logging.info(
+            f"{request_id} | {miner_uid} | {miner_evidence.url} | Is domain registered recently: {domain_registered_recently}"
+        )
+        if domain_registered_recently:
+            snippet_score = DOMAIN_REGISTERED_RECENTLY
+            return VericoreStatementResponse(
+                url=miner_evidence.url,
+                excerpt=miner_evidence.excerpt,
+                domain=domain,
+                snippet_found=False,
+                local_score=0.0,
+                snippet_score=snippet_score,
+                snippet_score_reason="domain_is_recently_registered"
+            )
+
+    def is_valid_separator_sentence(self, sentence):
+        if not sentence:
+            return False
+        #
+        # sentence = sentence.replace('’', "'").replace('“', '"').replace('”', '"').replace('–', '-').replace('—', '-')
+        #
+        # # Must start with an alphanumeric character
+        # if not sentence[0].isalnum():
+        #     return False
+        #
+        # # Must end with an alphanumeric character or valid punctuation
+        # # if not re.search(r'[A-Za-z0-9]$|(\.\.\.|[.!?])$', sentence):
+        # #     return False
+
+        # Must contain at least two words
+        number_of_words = sentence.strip().split()
+        if len(number_of_words) < 3:
+            return False
+
+        return True
+
+        #
+        # # Accept common scientific characters in words
+        # allowed_special_chars = set(".,:^∙()/-×%—'")
+        #
+        # for word in words:
+        #     clean = re.sub(r'[.!?]+$', '', word)  # remove trailing punctuation
+        #     specials = [ch for ch in clean if not ch.isalnum() and ch not in allowed_special_chars]
+        #
+        #     if len(specials) > 0:  # Fail only if *unexpected* specials are found
+        #         return False
+        #
+        return True
 
     async def validate_miner_snippet(
         self,
@@ -236,6 +381,16 @@ class SnippetValidator:
             bt.logging.info(
                 f"{request_id} | {miner_uid} | {miner_evidence.url} | Domain verified"
             )
+
+            vericore_miner_response = await self.validate_miner_url(
+                request_id=request_id,
+                miner_uid=miner_uid,
+                original_statement=original_statement,
+                domain=domain,
+                miner_evidence=miner_evidence
+            )
+            if vericore_miner_response is not None:
+                return vericore_miner_response
 
             # check if snippet comes from verified domain
             approved_url_multiplier = 1
@@ -275,17 +430,18 @@ class SnippetValidator:
                 )
                 return vericore_miner_response
 
-            # check if url has query string and excerpt same as query string
-            response = await self.validate_miner_query_params(
-                request_id,
-                miner_uid,
-                domain,
-                original_statement,
-                miner_evidence
-            )
-
-            if response is not None:
-                return response
+            # Invalid excerpt - Score: -5
+            if not self.is_valid_separator_sentence(snippet_str):
+                snippet_score = INVALID_SNIPPET_EXCERPT
+                return VericoreStatementResponse(
+                    url=miner_evidence.url,
+                    excerpt=miner_evidence.excerpt,
+                    domain=domain,
+                    snippet_found=False,
+                    local_score=0.0,
+                    snippet_score=snippet_score,
+                    snippet_score_reason="invalid_excerpt"
+                )
 
             bt.logging.info(f"{request_id} | {miner_uid} | {miner_evidence.url} | Is snippet in same context as statement")
 
@@ -297,7 +453,7 @@ class SnippetValidator:
 
             if is_similar_excerpt:
                 snippet_score = EXCERPT_TOO_SIMILAR
-                vericore_miner_response = VericoreStatementResponse(
+                return VericoreStatementResponse(
                     url=miner_evidence.url,
                     excerpt=miner_evidence.excerpt,
                     domain=domain,
@@ -307,8 +463,6 @@ class SnippetValidator:
                     snippet_score_reason="excerpt_too_similar",
                     statement_similarity_score=statement_similarity_score
                 )
-                return vericore_miner_response
-
 
             bt.logging.info(
                 f"{request_id} | {miner_uid} | {miner_evidence.url} | Fetching page text"
@@ -331,9 +485,46 @@ class SnippetValidator:
                 )
                 return vericore_miner_response
 
+            if is_search_web_page(page_text):
+                snippet_score = IS_SEARCH_WEB_PAGE
+                return VericoreStatementResponse(
+                    url=miner_evidence.url,
+                    excerpt=miner_evidence.excerpt,
+                    domain=domain,
+                    snippet_found=False,
+                    local_score=0.0,
+                    snippet_score=snippet_score,
+                    snippet_score_reason="is_search_web_page"
+                )
+
             bt.logging.info(
                 f"{request_id} | {miner_uid} | {miner_evidence.url} | Verifying snippet in rendered page"
             )
+
+            # assessment_result = await assess_statement_async(
+            #     request_id=request_id,
+            #     miner_uid=miner_uid,
+            #     statement_url=miner_evidence.url,
+            #     statement=original_statement,
+            #     webpage=page_text,
+            #     miner_excerpt=miner_evidence.excerpt,
+            # )
+            #
+            # bt.logging.info(
+            #     f"********** {request_id} | {miner_uid} | {miner_evidence.url} | Assessment Result: {assessment_result} ********** "
+            # )
+            # if assessment_result is not None and assessment_result.get("response") == "UNRELATED":
+            #     snippet_score = UNRELATED_PAGE_SNIPPET
+            #     vericore_miner_response = VericoreStatementResponse(
+            #         url=miner_evidence.url,
+            #         excerpt=miner_evidence.excerpt,
+            #         domain=domain,
+            #         snippet_found=False,
+            #         local_score=0.0,
+            #         snippet_score=snippet_score,
+            #         snippet_score_reason="unrelated_page_snippet"
+            #     )
+            #     return vericore_miner_response
 
             # Verify that the snippet is actually within the provided url
             # #todo - should we split score between url exists and whether the web-page does include the snippet
@@ -360,22 +551,28 @@ class SnippetValidator:
                 )
                 return vericore_miner_response
 
-            # Dont score if domain was registered within 30 days.
-            domain_registered_recently = await domain_is_recently_registered(domain)
+            context_similarity_score = calculate_similarity_score(
+                statement=original_statement.strip(),
+                excerpt=miner_evidence.excerpt
+            )
 
             bt.logging.info(
-                f"{request_id} | {miner_uid} | {miner_evidence.url} | Is domain registered recently: {domain_registered_recently}"
+                f"{request_id} | {miner_uid} | {miner_evidence.url} | Context similarity: {context_similarity_score} "
             )
-            if domain_registered_recently:
-                snippet_score = DOMAIN_REGISTERED_RECENTLY
-                vericore_miner_response = VericoreStatementResponse(
+
+            # Zero score if excerpt isn't context similar to statement
+            if context_similarity_score < MIN_SNIPPET_CONTEXT_SIMILARITY_SCORE:
+                snippet_score = SNIPPET_NOT_CONTEXT_SIMILAR
+                return VericoreStatementResponse(
                     url=miner_evidence.url,
                     excerpt=miner_evidence.excerpt,
                     domain=domain,
                     snippet_found=False,
                     local_score=0.0,
                     snippet_score=snippet_score,
-                    snippet_score_reason="domain_is_recently_registered"
+                    snippet_score_reason="snippet_not_context_similar",
+                    context_similarity_score=context_similarity_score,
+                    page_text=""
                 )
                 return vericore_miner_response
 
