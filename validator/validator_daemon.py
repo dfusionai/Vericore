@@ -15,7 +15,6 @@ from shared.store_results_handler import (
     register_validator_results_data_handler,
     ValidatorResultsDataHandler,
 )
-from dotenv import load_dotenv
 
 from shared.validator_results_data import ValidatorResultsData
 
@@ -43,7 +42,6 @@ def get_config():
     os.makedirs(config.full_path, exist_ok=True)
     return config
 
-
 def setup_bittensor_objects(config):
     wallet = bt.wallet(config=config)
     bt.logging.info(f"Wallet: {wallet}")
@@ -55,7 +53,6 @@ def setup_bittensor_objects(config):
         bt.logging.error("Wallet not registered on chain. Run 'btcli register'.")
         exit()
     return wallet, subtensor, metagraph
-
 
 def setup_logging(wallet, config):
     bt.logging(config=config, logging_dir=config.full_path)
