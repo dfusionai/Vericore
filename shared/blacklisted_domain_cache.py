@@ -28,7 +28,6 @@ class BlacklistedDomainCache:
         return self.cache
 
     def requires_refresh(self) -> bool:
-        bt.logging.info(f"requires_refresh: {blacklisted_domain_cache.cache is None}")
         if blacklisted_domain_cache.cache is None:
             return True
         # bt.logging.info(f"time_refreshed: {self.time_refreshed is None}: {self.time_refreshed + REFRESH_BLACKLISTED_DOMAIN_TIMEOUT} : {time.time()}")
