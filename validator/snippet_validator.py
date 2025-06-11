@@ -29,12 +29,11 @@ from shared.scores import (
     EXCERPT_TOO_SIMILAR,
     USING_SEARCH_AS_EVIDENCE,
     UNRELATED_PAGE_SNIPPET,
-    FAKE_MINER_URL,
     BLACKLISTED_URL_SCORE,
     INVALID_SNIPPET_EXCERPT,
-    SNIPPET_NOT_CONTEXT_SIMILAR, IS_SEARCH_WEB_PAGE
+    SNIPPET_NOT_CONTEXT_SIMILAR, IS_SEARCH_WEB_PAGE, FAKE_SNIPPET
 )
-from validator.statement_context_evaluator import assess_statement_async, assess_url_as_fake
+from validator.statement_context_evaluator import assess_statement_async
 from validator.web_page_validator import is_search_web_page
 
 MIN_SNIPPET_CONTEXT_SIMILARITY_SCORE = .65
@@ -498,30 +497,57 @@ class SnippetValidator:
                 f"{request_id} | {miner_uid} | {miner_evidence.url} | Verifying snippet in rendered page"
             )
 
-            # assessment_result = await assess_statement_async(
-            #     request_id=request_id,
-            #     miner_uid=miner_uid,
-            #     statement_url=miner_evidence.url,
-            #     statement=original_statement,
-            #     webpage=page_text,
-            #     miner_excerpt=miner_evidence.excerpt,
-            # )
-            #
-            # bt.logging.info(
-            #     f"********** {request_id} | {miner_uid} | {miner_evidence.url} | Assessment Result: {assessment_result} ********** "
-            # )
-            # if assessment_result is not None and assessment_result.get("response") == "UNRELATED":
-            #     snippet_score = UNRELATED_PAGE_SNIPPET
-            #     vericore_miner_response = VericoreStatementResponse(
-            #         url=miner_evidence.url,
-            #         excerpt=miner_evidence.excerpt,
-            #         domain=domain,
-            #         snippet_found=False,
-            #         local_score=0.0,
-            #         snippet_score=snippet_score,
-            #         snippet_score_reason="unrelated_page_snippet"
-            #     )
-            #     return vericore_miner_response
+            assessment_result = await assess_statement_async(
+                request_id=request_id,
+                miner_uid=miner_uid,
+                statement_url=miner_evidence.url,
+                statement=original_statement,
+                webpage=page_text,
+                miner_excerpt=miner_evidence.excerpt,
+            )
+
+            bt.logging.info(
+                f"{request_id} | {miner_uid} | {miner_evidence.url} | Assessment Result: {assessment_result}"
+            )
+            if assessment_result is not None:
+                snippet_result = assessment_result.get("snippet_status")
+                is_search_url = assessment_result.get("is_search_url")
+                if snippet_result == "UNRELATED":
+                    snippet_score = UNRELATED_PAGE_SNIPPET
+                    return VericoreStatementResponse(
+                        url=miner_evidence.url,
+                        excerpt=miner_evidence.excerpt,
+                        domain=domain,
+                        snippet_found=False,
+                        local_score=0.0,
+                        snippet_score=snippet_score,
+                        snippet_score_reason="unrelated_page_snippet",
+                        rejection_reason = assessment_result.get("reason")
+                    )
+                elif snippet_result == "FAKE":
+                    snippet_score = FAKE_SNIPPET
+                    return VericoreStatementResponse(
+                        url=miner_evidence.url,
+                        excerpt=miner_evidence.excerpt,
+                        domain=domain,
+                        snippet_found=False,
+                        local_score=0.0,
+                        snippet_score=snippet_score,
+                        snippet_score_reason="fake_page_snippet",
+                        rejection_reason = assessment_result.get("reason")
+                    )
+                elif is_search_url:
+                    snippet_score = IS_SEARCH_WEB_PAGE
+                    return VericoreStatementResponse(
+                        url=miner_evidence.url,
+                        excerpt=miner_evidence.excerpt,
+                        domain=domain,
+                        snippet_found=False,
+                        local_score=0.0,
+                        snippet_score=snippet_score,
+                        snippet_score_reason="is_search_web_page",
+                        rejection_reason = assessment_result.get("reason")
+                    )
 
             # Verify that the snippet is actually within the provided url
             # #todo - should we split score between url exists and whether the web-page does include the snippet
