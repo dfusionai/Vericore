@@ -42,7 +42,8 @@ global_handler = AiChatHandler()
 
 async def assess_statement_async(request_id: str, miner_uid: int, statement_url: str, statement: str, webpage: str, miner_excerpt: str):
     bt.logging.info(f"{request_id} | {miner_uid} | {statement_url} | Assessing statement")
-
+    # update to be more positive - change to say what to expect.
+    # check to see what web-page is being passed with beautifulsoup
     messages = [
         {"role": "system",
          "content": f"""You are a helpful assistant that checks whether the excerpt agrees or disagrees with the statement or the statement is unrelated.
@@ -62,6 +63,7 @@ Definitions:
 
 Do not include explanations. Only return the JSON object.
 """
+
                                       },
         {"role": "user", "content": f"""
         Webpage Excerpt: {webpage[:1500]}
