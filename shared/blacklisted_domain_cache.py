@@ -31,7 +31,7 @@ class BlacklistedDomainCache:
         if blacklisted_domain_cache.cache is None:
             return True
 
-        return self.time_refreshed is None or self.time_refreshed + REFRESH_BLACKLISTED_DOMAIN_TIMEOUT > time.time()
+        return self.time_refreshed is None or time.time() > self.time_refreshed + REFRESH_BLACKLISTED_DOMAIN_TIMEOUT
 
 blacklisted_domain_cache = BlacklistedDomainCache()
 
