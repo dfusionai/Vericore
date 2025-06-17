@@ -194,8 +194,8 @@ class SnippetValidator:
         parsed = urlparse(miner_evidence.url)
         path_parts = [unquote_plus(part.strip()) for part in parsed.path.split('/') if part]
 
-        for part in path_parts:
-            if part.lower() == 'search':
+        for part_index, part in enumerate(path_parts):
+            if re.search(r"[\\/]*search[\\/]*", part):
                 bt.logging.info(f"{request_id} | {miner_uid} | {miner_evidence.url} | {part} | search is part of url")
                 snippet_score = USING_SEARCH_AS_EVIDENCE
                 return VericoreStatementResponse(
@@ -208,34 +208,51 @@ class SnippetValidator:
                     snippet_score_reason="using_search_as_evidence",
                 )
 
-            word_count = len(part.split())
-            # has_punctuation = bool(re.search(r"[.,:;!?]", decoded_part))
+            if part_index == len(path_parts) - 1:
+                word_count = len(part.split())
+                # has_punctuation = bool(re.search(r"[.,:;!?]", decoded_part))
 
-            if word_count > 3:
-                bt.logging.info(f"{request_id} | {miner_uid} | {miner_evidence.url} | {part} | Last url search parameter is sentence")
-                snippet_score = USING_SEARCH_AS_EVIDENCE
-                return VericoreStatementResponse(
-                    url=miner_evidence.url,
-                    excerpt=miner_evidence.excerpt,
-                    domain=domain,
-                    snippet_found=False,
-                    local_score=0.0,
-                    snippet_score=snippet_score,
-                    snippet_score_reason="using_search_as_evidence",
-                )
+                if word_count > 3:
+                    bt.logging.info(f"{request_id} | {miner_uid} | {miner_evidence.url} | {part} | Last url search parameter is sentence")
+                    snippet_score = USING_SEARCH_AS_EVIDENCE
+                    return VericoreStatementResponse(
+                        url=miner_evidence.url,
+                        excerpt=miner_evidence.excerpt,
+                        domain=domain,
+                        snippet_found=False,
+                        local_score=0.0,
+                        snippet_score=snippet_score,
+                        snippet_score_reason="using_search_as_evidence",
+                    )
 
-            if "%20" in part:
-                bt.logging.info(f"{request_id} | {miner_uid} | {miner_evidence.url} | {part} | Last url search parameter is sentence:%20 ")
-                snippet_score = USING_SEARCH_AS_EVIDENCE
-                return VericoreStatementResponse(
-                    url=miner_evidence.url,
-                    excerpt=miner_evidence.excerpt,
-                    domain=domain,
-                    snippet_found=False,
-                    local_score=0.0,
-                    snippet_score=snippet_score,
-                    snippet_score_reason="using_search_as_evidence:%20",
+                if "%20" in part:
+                    bt.logging.info(f"{request_id} | {miner_uid} | {miner_evidence.url} | {part} | Last url search parameter is sentence:%20 ")
+                    snippet_score = USING_SEARCH_AS_EVIDENCE
+                    return VericoreStatementResponse(
+                        url=miner_evidence.url,
+                        excerpt=miner_evidence.excerpt,
+                        domain=domain,
+                        snippet_found=False,
+                        local_score=0.0,
+                        snippet_score=snippet_score,
+                        snippet_score_reason="using_search_as_evidence:%20"
+                    )
+
+                is_similar_excerpt, statement_similarity_score,  = await self.is_snippet_similar_to_statement(
+                    request_id, miner_uid, miner_evidence.url, miner_evidence.excerpt, part
                 )
+                if is_similar_excerpt:
+                    bt.logging.info(f"{request_id} | {miner_uid} | {miner_evidence.url} | {part} | Excerpt is same as url")
+                    snippet_score = USING_SEARCH_AS_EVIDENCE
+                    return VericoreStatementResponse(
+                        url=miner_evidence.url,
+                        excerpt=miner_evidence.excerpt,
+                        domain=domain,
+                        snippet_found=False,
+                        local_score=0.0,
+                        snippet_score=snippet_score,
+                        snippet_score_reason="using_search_as_evidence",
+                    )
 
         # llm_response = await assess_url_as_fake(
         #     request_id,
@@ -328,9 +345,10 @@ class SnippetValidator:
 
         # Must contain at least two words
         number_of_words = sentence.strip().split()
-        if len(number_of_words) < 3:
+        if len(number_of_words) < 5:
             return False
 
+        # check if there is
         return True
 
         #
