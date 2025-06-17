@@ -40,6 +40,7 @@ class VericoreStatementResponse():
   local_score: float
   snippet_score: float
   snippet_score_reason: str = ""
+  rejection_reason: str = ""
   domain_factor: float = 0
   contradiction: float = 0
   neutral: float = 0
