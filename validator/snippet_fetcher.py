@@ -1,4 +1,3 @@
-import datetime
 import time
 import asyncio
 import httpx
@@ -7,6 +6,8 @@ from aiolimiter import AsyncLimiter
 
 import bittensor as bt
 import certifi
+
+from shared.environment_variables import HTML_PARSER_API_URL, USE_HTML_PARSER_API
 
 REQUEST_TIMEOUT_SECONDS = 20
 
@@ -66,6 +67,42 @@ class SnippetFetcher:
                 f"{request_id} | {miner_uid} | {endpoint} | Error {e} | {duration:.4f} seconds"
             )
 
+    async def send_html_parser_api_request(
+        self, request_id: str, miner_uid: int, endpoint: str, headers: dict = None
+    ):
+        start = time.perf_counter()
+        try:
+            bt.logging.info(
+                f"{request_id} | {miner_uid} | {endpoint} | Snippet Fetcher: Sending request"
+            )
+            request = {
+                "url" : endpoint
+            }
+            response = await self.client.post(
+                f"{HTML_PARSER_API_URL}/render",
+                json=request,
+                timeout=REQUEST_TIMEOUT_SECONDS
+            )
+
+            duration = time.perf_counter() - start
+
+            bt.logging.info(
+                f"{request_id} | {miner_uid} | {endpoint} | Snippet Fetcher: Received response {response.status_code} | {duration:.4f} seconds"
+            )
+
+            return response
+        except Exception as e:
+            duration = time.perf_counter() - start
+            bt.logging.warning(
+                f"{request_id} | {miner_uid} | {endpoint} | Error {e} | {duration:.4f} seconds"
+            )
+
+    async def render_page(self, request_id: str, miner_uid: int, endpoint: str, headers: dict = None):
+        if USE_HTML_PARSER_API:
+            return await self.send_html_parser_api_request(request_id, miner_uid, endpoint, headers)
+        else:
+            return await self.send_get_request(request_id, miner_uid, endpoint, headers)
+
     async def clean_html(
         self, request_id: str, miner_uid: int, url: str, html: str
     ) -> str:
@@ -92,9 +129,9 @@ class SnippetFetcher:
         try:
             start = time.perf_counter()
 
-            response = await self.send_get_request(
+            response = await self.render_page(
                 request_id, miner_uid, url
-            )  # requests.get(url, headers=headers)
+            )
 
             if response is None or response.status_code != 200:
                 bt.logging.info(f"{request_id} | {miner_uid} | {url} | Returning empty html")
