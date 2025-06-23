@@ -49,15 +49,6 @@ class AiChatHandler:
                 bt.logging.debug("Failed to parse JSON:", json)
                 return None
 
-            # content_str = data["choices"][0]["message"]["content"]
-            # # Remove ```json ``` if it is there
-            # content_str = content_str.removeprefix("```json").removesuffix("```").strip()
-            # # Parse the JSON string returned inside content
-            # try:
-            #     return json.loads(content_str)
-            # except json.JSONDecodeError:
-            #     print("Failed to parse JSON:", content_str)
-            #     return None
         except httpx.HTTPError as e:
             print(f"HTTP error: {e}")
             return None
