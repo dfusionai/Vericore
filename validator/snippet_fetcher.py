@@ -134,7 +134,7 @@ class SnippetFetcher:
             )
 
             if response is None or response.status_code != 200:
-                bt.logging.error(f"{request_id} | {miner_uid} | {url} | Error occurred | Returning empty html : {response.text}")
+                bt.logging.error(f"{request_id} | {miner_uid} | {url} | Error occurred | Returning empty html : {response}")
                 return ""
 
             cleaned_html: str = await self.clean_html(
