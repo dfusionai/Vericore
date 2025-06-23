@@ -19,7 +19,7 @@ def register_proxy_log_handler(logger, logger_type: LoggerType, wallet):
     if not enable_logging:
         return
 
-    proxy_url = os.environ.get("LOGGER_API_URL", 'https://log.vericore.dfusion.ai')
+    proxy_url = os.environ.get("LOGGER_API_URL", 'https://api.log.vericore.dfusion.ai')
 
     bt.logging.info(f"Registered proxy logging on url:  {proxy_url}")
 
