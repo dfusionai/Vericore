@@ -86,15 +86,15 @@ class SnippetFetcher:
 
             duration = time.perf_counter() - start
 
-            bt.logging.info(
+            bt.logging.success(
                 f"{request_id} | {miner_uid} | {endpoint} | Snippet Fetcher: Received response {response.status_code} | {duration:.4f} seconds"
             )
 
             return response
         except Exception as e:
             duration = time.perf_counter() - start
-            bt.logging.warning(
-                f"{request_id} | {miner_uid} | {endpoint} | Error {e} | {duration:.4f} seconds"
+            bt.logging.error(
+                f"{request_id} | {miner_uid} | {endpoint} | Snippet Fetcher: Error {e} | {duration:.4f} seconds"
             )
 
     async def render_page(self, request_id: str, miner_uid: int, endpoint: str, headers: dict = None):
@@ -134,7 +134,7 @@ class SnippetFetcher:
             )
 
             if response is None or response.status_code != 200:
-                bt.logging.info(f"{request_id} | {miner_uid} | {url} | Returning empty html")
+                bt.logging.error(f"{request_id} | {miner_uid} | {url} | Error occurred | Returning empty html : {response.text}")
                 return ""
 
             cleaned_html: str = await self.clean_html(
