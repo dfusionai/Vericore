@@ -2,7 +2,6 @@ import time
 import asyncio
 import httpx
 from bs4 import BeautifulSoup
-from aiolimiter import AsyncLimiter
 
 import bittensor as bt
 import certifi
@@ -160,18 +159,6 @@ class SnippetFetcher:
                 f"{request_id} | {miner_uid} | {url} | Failed to fetch html {e}"
             )
             return ""
-
-        # self.driver = webdriver.Chrome(service=self.service, options=self.chrome_options)
-        # try:
-        #     bt.logging.info(f"Fetching url: {url}")
-        #     self.driver.get(url)
-        #     page_source = self.driver.page_source
-        #     return page_source
-        # except Exception as e:
-        #     bt.logging.error(f"Failed to fetch {url} - {e}")
-        #     return ""
-        # # finally:
-        #    # self.driver.quit()
 
 snippet_fetcher = SnippetFetcher()
 

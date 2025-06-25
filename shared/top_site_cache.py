@@ -8,7 +8,6 @@ class TopSitesCache:
         self.url = f"{dashboard_api_url}/acceptable-top-level-domains"
         self.cache = self.fetch_top_sites()
 
-
     def fetch_top_sites(self) :
         try:
             bt.logging.info(f"VALIDATOR | Fetching domains from {self.url}")
