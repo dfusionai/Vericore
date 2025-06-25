@@ -687,7 +687,12 @@ async def veridex_query(request: Request):
     sources = data.get("sources", [])
     if not statement:
         raise HTTPException(status_code=400, detail="Missing 'statement'")
-    request_id = f"req-{random.getrandbits(32):08x}"
+
+    # Check if request_id is passed. If so, use that id instead of generating id
+    request_id = data.get("request_id")
+    if request_id is None:
+        request_id = f"req-{random.getrandbits(32):08x}"
+
     timestamp = time.time()
     handler = app.state.handler
     start_time = time.perf_counter()

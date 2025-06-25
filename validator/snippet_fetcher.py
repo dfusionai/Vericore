@@ -1,15 +1,14 @@
-import datetime
 import time
 import asyncio
 import httpx
 from bs4 import BeautifulSoup
-from aiolimiter import AsyncLimiter
 
 import bittensor as bt
 import certifi
 
-REQUEST_TIMEOUT_SECONDS = 20
+from shared.environment_variables import HTML_PARSER_API_URL, USE_HTML_PARSER_API
 
+REQUEST_TIMEOUT_SECONDS = 60
 
 class SnippetFetcher:
 
@@ -31,7 +30,8 @@ class SnippetFetcher:
             },
             timeout=REQUEST_TIMEOUT_SECONDS,  # Adjust as needed
         )
-        self.limiter = AsyncLimiter(1, 10.0)  # 5 requests/second
+        # self.limiter = AsyncLimiter(max_rate=5, time_period=10.0)  # 10 seconds per 10 seconds
+        self.limiter = asyncio.Semaphore(10) # Max 10 concurrent threads
 
     # Implement async context manager methods
     async def __aenter__(self):
@@ -66,6 +66,51 @@ class SnippetFetcher:
                 f"{request_id} | {miner_uid} | {endpoint} | Error {e} | {duration:.4f} seconds"
             )
 
+    async def send_html_parser_api_request(
+        self, request_id: str, miner_uid: int, endpoint: str, headers: dict = None
+    ):
+        start = time.perf_counter()
+        try:
+            bt.logging.info(
+                f"{request_id} | {miner_uid} | {endpoint} | Snippet Fetcher: Sending request"
+            )
+            request = {
+                "url" : endpoint
+            }
+            response = await self.client.post(
+                f"{HTML_PARSER_API_URL}/render",
+                json=request,
+                timeout=REQUEST_TIMEOUT_SECONDS
+            )
+
+            duration = time.perf_counter() - start
+
+            bt.logging.success(
+                f"{request_id} | {miner_uid} | {endpoint} | Snippet Fetcher: Received response {response.status_code} | {duration:.4f} seconds"
+            )
+
+            return response
+        except Exception as e:
+            duration = time.perf_counter() - start
+            bt.logging.error(
+                f"{request_id} | {miner_uid} | {endpoint} | Snippet Fetcher: Error {e} | {duration:.4f} seconds"
+            )
+
+    async def render_page(self, request_id: str, miner_uid: int, endpoint: str, headers: dict = None):
+        bt.logging.info(
+            f"{request_id} | {miner_uid} | {endpoint} | Snippet Fetcher: Rendering page - waiting for semaphore"
+        )
+
+        async with self.limiter:
+            bt.logging.info(
+                f"{request_id} | {miner_uid} | {endpoint} | Snippet Fetcher: Rendering page - fetching snippet - passed semaphore"
+            )
+
+            if USE_HTML_PARSER_API:
+                return await self.send_html_parser_api_request(request_id, miner_uid, endpoint, headers)
+            else:
+                return await self.send_get_request(request_id, miner_uid, endpoint, headers)
+
     async def clean_html(
         self, request_id: str, miner_uid: int, url: str, html: str
     ) -> str:
@@ -92,12 +137,12 @@ class SnippetFetcher:
         try:
             start = time.perf_counter()
 
-            response = await self.send_get_request(
+            response = await self.render_page(
                 request_id, miner_uid, url
-            )  # requests.get(url, headers=headers)
+            )
 
             if response is None or response.status_code != 200:
-                bt.logging.info(f"{request_id} | {miner_uid} | {url} | Returning empty html")
+                bt.logging.error(f"{request_id} | {miner_uid} | {url} | Error occurred | Returning empty html : {response}")
                 return ""
 
             cleaned_html: str = await self.clean_html(
@@ -114,18 +159,6 @@ class SnippetFetcher:
                 f"{request_id} | {miner_uid} | {url} | Failed to fetch html {e}"
             )
             return ""
-
-        # self.driver = webdriver.Chrome(service=self.service, options=self.chrome_options)
-        # try:
-        #     bt.logging.info(f"Fetching url: {url}")
-        #     self.driver.get(url)
-        #     page_source = self.driver.page_source
-        #     return page_source
-        # except Exception as e:
-        #     bt.logging.error(f"Failed to fetch {url} - {e}")
-        #     return ""
-        # # finally:
-        #    # self.driver.quit()
 
 snippet_fetcher = SnippetFetcher()
 

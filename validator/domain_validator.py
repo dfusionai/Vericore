@@ -19,7 +19,7 @@ async def domain_is_recently_registered(domain) -> bool:
             creation_date = creation_date[0]  # In case of multiple creation dates
 
         if not creation_date:
-            bt.logging.error(f"Creation date is null")
+            # bt.logging.error(f"Creation date is null")
             # Give benefit of doubt if error happened: return False
             return False
 
