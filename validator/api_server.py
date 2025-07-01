@@ -5,6 +5,7 @@ import argparse
 import asyncio
 import json
 import logging
+from datetime import datetime
 from dataclasses import dataclass
 from typing import List
 from bittensor import NeuronInfo
@@ -693,17 +694,19 @@ async def veridex_query(request: Request):
     if request_id is None:
         request_id = f"req-{random.getrandbits(32):08x}"
 
-    timestamp = time.time()
     handler = app.state.handler
     start_time = time.perf_counter()
     result: VericoreQueryResponse = await handler.handle_query(request_id, statement, sources)
     end_time = time.perf_counter()
     duration = end_time - start_time
-    bt.logging.info(
-        f"{request_id} | Finished processing at {end_time} (Duration: {duration:.4f} seconds)"
-    )
-    result.timestamp = timestamp
+
+    # Set latest timestamp
+    result.timestamp = time.time()
     result.total_elapsed_time = duration
+
+    bt.logging.info(
+        f"{request_id} | Finished processing at {end_time} (Duration: {duration:.4f} seconds) | {datetime.fromtimestamp(result.timestamp)}"
+    )
 
     handler.write_result_file(request_id, result)
 
