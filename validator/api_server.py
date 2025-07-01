@@ -705,7 +705,7 @@ async def veridex_query(request: Request):
     result.total_elapsed_time = duration
 
     bt.logging.info(
-        f"{request_id} | Finished processing at {end_time} (Duration: {duration:.4f} seconds) | {datetime.fromtimestamp(timestamp)}"
+        f"{request_id} | Finished processing at {end_time} (Duration: {duration:.4f} seconds) | {datetime.fromtimestamp(result.timestamp)}"
     )
 
     handler.write_result_file(request_id, result)
