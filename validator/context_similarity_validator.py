@@ -2,7 +2,7 @@ import queue
 import argparse
 from sentence_transformers import SentenceTransformer, util
 
-MAX_VALIDATOR_THREADS = 10
+MAX_VALIDATOR_THREADS = 5
 
 class ContextSimilarityValidator:
 

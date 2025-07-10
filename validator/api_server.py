@@ -31,7 +31,7 @@ from shared.scores import (
 )
 from shared.log_data import LoggerType
 from shared.proxy_log_handler import register_proxy_log_handler
-from validator.snippet_validator import SnippetValidator
+from validator.snippet_validator import run_validate_miner_snippet
 from validator.active_tester import StatementGenerator
 
 from dotenv import load_dotenv
@@ -327,9 +327,8 @@ class APIQueryHandler:
             bt.logging.info(f"{request_id} | {miner_uid} | Verifying Miner Statements. Received {len(miner_response.synapse.veridex_response)} responses. Only Processing {MAX_MINER_RESPONSES}")
 
             # Create tasks
-            validator = SnippetValidator()
             tasks = [
-                validator.validate_miner_snippet(
+                run_validate_miner_snippet(
                     request_id=request_id,
                     miner_uid=miner_uid,
                     original_statement=statement,

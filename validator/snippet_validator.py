@@ -658,3 +658,20 @@ class SnippetValidator:
                 snippet_score_reason="error_verifying_miner_snippet"
             )
             return vericore_miner_response
+
+
+
+validator = SnippetValidator()
+
+async def run_validate_miner_snippet(
+    request_id: str,
+    miner_uid: int,
+    original_statement: str,
+    miner_evidence: SourceEvidence
+) -> VericoreStatementResponse:
+    return await validator.validate_miner_snippet(
+        request_id,
+        miner_uid,
+        original_statement,
+        miner_evidence
+    )
