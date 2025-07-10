@@ -149,13 +149,13 @@ class APIQueryHandler:
             )
             bt.logging.info(f"API Server running on uid: {self.my_subnet_uid}")
 
-    async def call_axon(self, request_id, target_axon, synapse):
+    async def call_axon(self, miner_uid, request_id, target_axon, synapse):
         start_time = time.time()
         bt.logging.info(f"{request_id} | Calling axon {target_axon.hotkey}")
         response = await self.dendrite.call(
             target_axon=target_axon, synapse=synapse, timeout=120, deserialize=True
         )
-        bt.logging.info(f"{request_id} | Called axon {target_axon.hotkey} | Received response {response}")
+        bt.logging.info(f"{request_id} | {miner_uid} | Called axon {target_axon.hotkey} | Received response {response}")
         end_time = time.time()
         elapsed = end_time - start_time + 1e-9
         veridex_response: VeridexResponse = VeridexResponse(
@@ -292,7 +292,7 @@ class APIQueryHandler:
             # Call the miner
             try:
                 miner_response = await self.call_axon(
-                    target_axon=neuron.axon_info, request_id=request_id, synapse=synapse
+                    target_axon=neuron.axon_info, request_id=request_id, synapse=synapse, miner_uid=neuron.uid
                 )
             except Exception as e:
                 bt.logging.error(f"{request_id} | {miner_uid} | An error has occurred calling miner with error: {e}")
