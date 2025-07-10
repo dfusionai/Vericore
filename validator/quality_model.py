@@ -106,7 +106,7 @@ class VeridexQualityModel:
 
 verify_quality_model = VeridexQualityModel()
 
-model_lock = asyncio.Semaphore(5)
+model_lock = threading.Semaphore(5)
 
 async def score_statement_snippets(statement: str, snippet_texts: list) -> (float, list):
     return await asyncio.to_thread(verify_quality_model.score_statement_snippets, statement, snippet_texts)
