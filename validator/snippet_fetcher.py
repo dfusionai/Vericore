@@ -31,7 +31,7 @@ class SnippetFetcher:
             timeout=REQUEST_TIMEOUT_SECONDS,  # Adjust as needed
         )
         # self.limiter = AsyncLimiter(max_rate=5, time_period=10.0)  # 10 seconds per 10 seconds
-        self.limiter = asyncio.Semaphore(10) # Max 10 concurrent threads
+        self.limiter = asyncio.Semaphore(5) # Max 5 concurrent threads
 
     # Implement async context manager methods
     async def __aenter__(self):
