@@ -158,7 +158,7 @@ class APIQueryHandler:
         bt.logging.info(f"{request_id} | Called axon {target_axon.hotkey}")
         end_time = time.time()
         elapsed = end_time - start_time + 1e-9
-        veridex_response = VeridexResponse
+        veridex_response = VeridexResponse()
         veridex_response.synapse = response
         veridex_response.elapse_time = elapsed
         return veridex_response
