@@ -27,7 +27,8 @@ from shared.veridex_protocol import (
 from shared.scores import (
     UNREACHABLE_MINER_SCORE,
     INVALID_RESPONSE_MINER_SCORE,
-    NO_STATEMENTS_PROVIDED_SCORE
+    NO_STATEMENTS_PROVIDED_SCORE,
+    COPY_MINERS_STATEMENT
 )
 from shared.log_data import LoggerType
 from shared.proxy_log_handler import register_proxy_log_handler
@@ -426,6 +427,61 @@ class APIQueryHandler:
             miner_selection.request_count += 1
             miner_selection.scores += miner_response.final_score
 
+    def validate_copy_miners(self, request_id: str, responses: List[VericoreMinerStatementResponse]):
+        sorted_responses = sorted(responses, key=lambda miner_response: miner_response.elapsed_time)
+
+        seen_miner_ids = []
+
+        for source_miner in sorted_responses:
+
+            if source_miner.status == "ok":
+
+                for target_miner in sorted_responses:
+                    if source_miner.miner_uid == target_miner.miner_uid:
+                        continue
+
+                    if target_miner.status != "ok":
+                        continue
+
+                    if target_miner.miner_uid in seen_miner_ids:
+                        continue
+
+                    source_miner.vericore_responses = sorted(source_miner.vericore_responses, key=lambda x: x.url)
+                    target_miner.vericore_responses = sorted(target_miner.vericore_responses, key=lambda x: x.url)
+
+                    source_responses = source_miner.vericore_responses
+                    target_responses = target_miner.vericore_responses
+
+                    if len(source_responses) != len(target_responses):
+                        continue
+
+                    is_same = True
+
+                    for index, source_response in enumerate(source_responses):
+
+                        if len(target_responses) > 0:
+                            target_response = target_responses[index]
+                            if target_response.url != source_response.url:
+                                is_same = False
+                                break
+                            if target_response.excerpt != source_response.excerpt:
+                                is_same = False
+                                break
+                        else:
+                            break
+
+                    if is_same:
+                        bt.logging.warning(f"{request_id} | Copy miner found: {target_miner.miner_uid}")
+                        # penalise target miner since elapsed is slower than source and has exact excerpt and url
+                        target_miner.status = "reject_copy_miner"
+                        target_miner.raw_score = COPY_MINERS_STATEMENT
+                        target_miner.final_score = COPY_MINERS_STATEMENT
+                        target_miner.speed_factor = 1
+
+            seen_miner_ids.append(source_miner.miner_uid)
+
+        return sorted_responses
+
     async def handle_query(
         self,
         request_id: str,
@@ -456,20 +512,20 @@ class APIQueryHandler:
                 for selected_miner in subset_miners
             ]
         )
-        # responses = []
-        # for selected_miner in subset_miners:
-        #     response = await self.process_miner_request(
-        #         request_id,
-        #         selected_miner.neuron_info,
-        #         synapse,
-        #         statement,
-        #         is_test,
-        #         is_nonsense
-        #     )
-        #     responses.append(response)
-        # update scores
 
         bt.logging.info(f"{request_id} | Completed all miner requests")
+
+        bt.logging.info(f"{request_id} | Validating copy miners")
+
+        import copy
+        test_miner = copy.deepcopy(responses[1])
+        test_miner.miner_uid = 3
+        test_miner.elapsed_time = 0.001
+        responses.append(test_miner)
+
+        responses = self.validate_copy_miners(request_id, responses)
+
+        bt.logging.info(f"{request_id} | Copy miners validation complete")
 
         response = VericoreQueryResponse(
             status="ok",
@@ -555,12 +611,8 @@ class APIQueryHandler:
             bt.logging.info(f"{self.my_uid} | Found {len(self.miner_cache)} miners")
             self.last_refresh_time = current_time
 
-
     def get_weighted_miners(self, miners):
         weights = []
-        # for miner_selection in miners:
-        #     weight = min(MAX_WEIGHT, max(MIN_WEIGHT, miner_selection.calculate_average_score()))
-        #     weights.append((miner_selection.miner_uid, weight))
 
         for miner_selection in miners:
             raw_score = miner_selection.scores
@@ -612,7 +664,6 @@ class APIQueryHandler:
 
             available_replacement_ids = [miner.miner_uid for miner in all_miners if miner not in selected_miners and miner.neuron_info.axon_info is not None and miner.neuron_info.axon_info.is_serving]
 
-
             # Add replacements for the miners that have null axons
             for i, null_miner in enumerate(null_miners):
                 if available_replacement_ids:
@@ -660,7 +711,6 @@ origins = [
     "*",
 ]
 
-
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
@@ -670,13 +720,11 @@ app.add_middleware(
     allow_headers=["*"],  # Allow all headers
 )
 
-
 # Create the APIQueryHandler during startup and store it in app.state.
 async def startup_event():
     print("startup_event")
     app.state.handler = APIQueryHandler()
     print("APIQueryHandler instance created at startup.")
-
 
 @app.post("/veridex_query")
 async def veridex_query(request: Request):
@@ -711,7 +759,6 @@ async def veridex_query(request: Request):
     handler.write_result_file(request_id, result)
 
     return JSONResponse(asdict(result))
-
 
 if __name__ == "__main__":
     import uvicorn
