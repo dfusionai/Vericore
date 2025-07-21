@@ -471,7 +471,7 @@ class APIQueryHandler:
                             break
 
                     if is_same:
-                        bt.logging.warning(f"{request_id} | Copy miner found: {target_miner.miner_uid}")
+                        bt.logging.warning(f"{request_id} | Duplicate miner statement found: {target_miner.miner_uid}")
                         # penalise target miner since elapsed is slower than source and has exact excerpt and url
                         target_miner.status = "duplicate_exact_miner_statements"
                         target_miner.raw_score = DUPLICATE_EXACT_MINER_STATEMENTS
