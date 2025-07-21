@@ -427,7 +427,7 @@ class APIQueryHandler:
             miner_selection.request_count += 1
             miner_selection.scores += miner_response.final_score
 
-    def validate_copy_miners(self, request_id: str, responses: List[VericoreMinerStatementResponse]):
+    def check_duplicate_miner_statements(self, request_id: str, responses: List[VericoreMinerStatementResponse]):
         sorted_responses = sorted(responses, key=lambda miner_response: miner_response.elapsed_time)
 
         seen_miner_ids = []
@@ -516,17 +516,18 @@ class APIQueryHandler:
 
         bt.logging.info(f"{request_id} | Completed all miner requests")
 
-        bt.logging.info(f"{request_id} | Validating copy miners")
+        bt.logging.info(f"{request_id} | Checking duplicate miner statements")
 
-        import copy
-        test_miner = copy.deepcopy(responses[1])
-        test_miner.miner_uid = 3
-        test_miner.elapsed_time = 0.001
-        responses.append(test_miner)
+        # add for debug
+        # import copy
+        # test_miner = copy.deepcopy(responses[1])
+        # test_miner.miner_uid = 3
+        # test_miner.elapsed_time = 0.001
+        # responses.append(test_miner)
 
-        responses = self.validate_copy_miners(request_id, responses)
+        responses = self.check_duplicate_miner_statements(request_id, responses)
 
-        bt.logging.info(f"{request_id} | Copy miners validation complete")
+        bt.logging.info(f"{request_id} | Duplicate miner statement check complete")
 
         response = VericoreQueryResponse(
             status="ok",
