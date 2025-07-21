@@ -28,7 +28,7 @@ from shared.scores import (
     UNREACHABLE_MINER_SCORE,
     INVALID_RESPONSE_MINER_SCORE,
     NO_STATEMENTS_PROVIDED_SCORE,
-    COPY_MINERS_STATEMENT
+    DUPLICATE_EXACT_MINER_STATEMENTS
 )
 from shared.log_data import LoggerType
 from shared.proxy_log_handler import register_proxy_log_handler
@@ -473,10 +473,11 @@ class APIQueryHandler:
                     if is_same:
                         bt.logging.warning(f"{request_id} | Copy miner found: {target_miner.miner_uid}")
                         # penalise target miner since elapsed is slower than source and has exact excerpt and url
-                        target_miner.status = "reject_copy_miner"
-                        target_miner.raw_score = COPY_MINERS_STATEMENT
-                        target_miner.final_score = COPY_MINERS_STATEMENT
+                        target_miner.status = "duplicate_exact_miner_statements"
+                        target_miner.raw_score = DUPLICATE_EXACT_MINER_STATEMENTS
+                        target_miner.final_score = DUPLICATE_EXACT_MINER_STATEMENTS
                         target_miner.speed_factor = 1
+                        # clear miner local scores
 
             seen_miner_ids.append(source_miner.miner_uid)
 
