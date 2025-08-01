@@ -195,7 +195,8 @@ class SnippetValidator:
         path_parts = [unquote_plus(part.strip()) for part in parsed.path.split('/') if part]
 
         for part_index, part in enumerate(path_parts):
-            if re.search(r"[\\/]*search[\\/]*", part):
+            if part.lower() == "search":
+            # if re.search(r"[\\/]*search[\\/]*", part):
                 bt.logging.info(f"{request_id} | {miner_uid} | {miner_evidence.url} | {part} | search is part of url")
                 snippet_score = USING_SEARCH_AS_EVIDENCE
                 return VericoreStatementResponse(
