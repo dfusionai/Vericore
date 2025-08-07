@@ -541,7 +541,8 @@ class SnippetValidator:
                         local_score=0.0,
                         snippet_score=snippet_score,
                         snippet_score_reason="unrelated_page_snippet",
-                        rejection_reason = assessment_result.get("reason")
+                        rejection_reason = assessment_result.get("reason"),
+                        assessment_result = assessment_result
                     )
                 elif snippet_result == "FAKE":
                     snippet_score = FAKE_SNIPPET
@@ -553,6 +554,7 @@ class SnippetValidator:
                         local_score=0.0,
                         snippet_score=snippet_score,
                         snippet_score_reason="fake_page_snippet",
+                        assessment_result=assessment_result,
                         rejection_reason = assessment_result.get("reason")
                     )
                 elif is_search_url:
@@ -564,6 +566,7 @@ class SnippetValidator:
                         snippet_found=False,
                         local_score=0.0,
                         snippet_score=snippet_score,
+                        assessment_result=assessment_result,
                         snippet_score_reason="is_search_web_page",
                         rejection_reason = assessment_result.get("reason")
                     )
@@ -589,6 +592,7 @@ class SnippetValidator:
                     local_score=0.0,
                     snippet_score=snippet_score,
                     snippet_score_reason="snippet_not_verified_in_url",
+                    assessment_result=assessment_result,
                     page_text=page_text if DEBUG_LOCAL else ""
                 )
                 return vericore_miner_response
@@ -614,6 +618,7 @@ class SnippetValidator:
                     snippet_score=snippet_score,
                     snippet_score_reason="snippet_not_context_similar",
                     context_similarity_score=context_similarity_score,
+                    assessment_result=assessment_result,
                     page_text=""
                 )
 
@@ -637,7 +642,8 @@ class SnippetValidator:
                 snippet_score=0,
                 context_similarity_score=context_similarity_score,
                 statement_similarity_score=statement_similarity_score,
-                is_similar_context=is_similar_excerpt
+                is_similar_context=is_similar_excerpt,
+                assessment_result=assessment_result
             )
             end_time = time.time()
             bt.logging.info(

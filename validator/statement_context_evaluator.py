@@ -30,8 +30,21 @@ async def assess_statement_async(request_id: str, miner_uid: int, statement_url:
         You need to also check whether the excerpt might be fake. The excerpt repeats the statement verbatim or nearly verbatim, but uses vague, evasive, or overly dramatic language that obscures meaning and does not engage meaningfully with the statement
         Additionally, check if the URL looks like a search results page (for example, if it contains 'search', 'q=', or comes from a search engine domain) and if the search query or URL content is similar to the statement or excerpt content.
 
-        Return the reason for your answer as well as the result:
-        {{ "reason:"", "snippet_status": "SUPPORT", "is_search_url": false  }}
+You are given the output of a Natural Language Inference (NLI) model to help you decide. The model is used as follows:
+- The `excerpt` is the *premise*.
+- The `statement` is the *hypothesis*.
+- The model returns logits for 3 labels in this order: [contradiction, neutral, entailment].
+- These logits are passed through a softmax layer to obtain probabilities:
+  - "contradiction": the probability that the excerpt contradicts the statement.
+  - "neutral": the probability that the excerpt neither supports nor contradicts the statement.
+  - "entailment": the probability that the excerpt supports the statement.
+
+        Use:
+        - local_score = contradiction + entailment (do not subtract neutrality)
+        to determine confidence in classification.
+
+        Return the reason for your answer as well as the result: Return the reason for your score.
+        {{ "reason:"", "snippet_status": "SUPPORT", "is_search_url": false, "score": {{ "contradiction": 0.0, "entailment": 0.0, "neutral": 0.0 }}   }}
 
 - snippet_status: One of "SUPPORT", "CONTRADICT", or "UNRELATED", or "FAKE" .
 - is_search_url: true if the URL is a search page and is similar to the statement; otherwise false.
@@ -43,7 +56,6 @@ Definitions:
 
 Do not include explanations. Only return the JSON object.
 """
-
                                       },
         {"role": "user", "content": f"""
         Webpage Excerpt: {webpage[:1500]}
