@@ -50,6 +50,7 @@ class VericoreStatementResponse():
   is_similar_context: bool=False
   approved_url_multiplier:float=0
   page_text: str = ""
+  assessment_result: dict = field(default_factory=dict)
 
 @dataclass
 class VericoreMinerStatementResponse():
