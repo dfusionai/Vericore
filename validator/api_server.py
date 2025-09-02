@@ -14,6 +14,15 @@ from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 
+try:
+    import torch
+    import torch.nn.functional as F
+
+    _TORCH_OK = True
+except Exception:
+    _TORCH_OK = False
+
+
 import bittensor as bt
 
 from shared.veridex_protocol import (
@@ -30,7 +39,9 @@ from shared.scores import (
     NO_STATEMENTS_PROVIDED_SCORE,
     DUPLICATE_EXACT_MINER_STATEMENTS
 )
+
 from shared.log_data import LoggerType
+from snippet_validator import run_validate_miner_snippet
 from shared.proxy_log_handler import register_proxy_log_handler
 from validator.snippet_validator import run_validate_miner_snippet
 from validator.active_tester import StatementGenerator
@@ -420,7 +431,7 @@ class APIQueryHandler:
                 final_score=INVALID_RESPONSE_MINER_SCORE,
             )
             return miner_statement
-
+    
     def update_miner_selection_cache(self, vericore_responses: List[VericoreMinerStatementResponse]):
         for miner_response in vericore_responses:
             miner_selection = self.miner_cache[miner_response.miner_uid]
@@ -528,7 +539,7 @@ class APIQueryHandler:
         responses = self.check_duplicate_miner_statements(request_id, responses)
 
         bt.logging.info(f"{request_id} | Duplicate miner statement check complete")
-
+        
         response = VericoreQueryResponse(
             status="ok",
             validator_uid=self.my_uid,
@@ -613,18 +624,24 @@ class APIQueryHandler:
             bt.logging.info(f"{self.my_uid} | Found {len(self.miner_cache)} miners")
             self.last_refresh_time = current_time
 
+
     def get_weighted_miners(self, miners):
         weights = []
+        # for miner_selection in miners:
+        #     weight = min(MAX_WEIGHT, max(MIN_WEIGHT, miner_selection.calculate_average_score()))
+        #     weights.append((miner_selection.miner_uid, weight))
 
         for miner_selection in miners:
             raw_score = miner_selection.scores
-            clamped_score = max(-5.0, min(raw_score, 10.0))  # [-5, 10]
-            normalized = (clamped_score + 5.0) / 15.0  # maps to [0, 1]
-            weight = MIN_WEIGHT + normalized * (MAX_WEIGHT - MIN_WEIGHT)
+
+            #clamped_score = max(-5.0, min(raw_score, 10.0))  # [-5, 10]
+            #normalized = (clamped_score + 5.0) / 15.0  # maps to [0, 1]
+            #weight = MIN_WEIGHT + normalized * (MAX_WEIGHT - MIN_WEIGHT)
+            weight=self.generate_weights(raw_score)
             weights.append((miner_selection.miner_uid, weight))
 
         total_weight = sum(weight for _,weight in weights)
-        # not sure if this is needed
+        # not sure if this is needed 
         if total_weight == 0:
             return [(m, 1.0 / len(weights)) for m, _ in weights]  # fallback: equal chance
 
@@ -637,6 +654,20 @@ class APIQueryHandler:
     def select_miner(self, weighted_miners, number_of_miners=5):
         miner_ids, probs = zip(*weighted_miners)
         return random.choices(miner_ids, weights=probs, k=number_of_miners)
+    
+    def generate_weights(self, scores):
+
+        if not _TORCH_OK:
+            raise RuntimeError("Torch not available for your weight generator please install torch ")
+        weights = []
+        for score in scores:
+            clamped_score = max(-5.0, min(score, 10.0))  # [-5, 10]
+            t = torch.tensor([clamped_score], dtype=torch.float32)
+            normalized_tensor = F.normalize(t, p=2, dim=0)
+            normalized = (normalized_tensor[0].item() + 1) / 2  # map to [0,1]
+            weight = MIN_WEIGHT + normalized * (MAX_WEIGHT - MIN_WEIGHT)
+            weights.append(weight)
+        return weights
 
     def select_miner_subset(self, number_of_miners=5) -> List[MinerSelection]:
         self.refresh_miner_cache()
@@ -648,15 +679,14 @@ class APIQueryHandler:
         if len(all_miners) <= number_of_miners:
             return all_miners
 
-        # calculate the weights
         weighted_miners = self.get_weighted_miners(all_miners)
 
         bt.logging.info(f"Weights calculated for miners")
 
-        # select the miners index  based on the weights
+
         selected_miner_indexes = self.select_miner(weighted_miners, number_of_miners)
 
-        # get all the miners for the selected indexes
+
         selected_miners =  [all_miners[i] for i in selected_miner_indexes]
 
         null_miners = [miner for miner in selected_miners if miner.neuron_info.axon_info is None or not miner.neuron_info.axon_info.is_serving]
@@ -666,7 +696,7 @@ class APIQueryHandler:
 
             available_replacement_ids = [miner.miner_uid for miner in all_miners if miner not in selected_miners and miner.neuron_info.axon_info is not None and miner.neuron_info.axon_info.is_serving]
 
-            # Add replacements for the miners that have null axons
+
             for i, null_miner in enumerate(null_miners):
                 if available_replacement_ids:
                     available_replacements = [weighted_miner for weighted_miner in weighted_miners if weighted_miner[0] in available_replacement_ids]
@@ -713,6 +743,7 @@ origins = [
     "*",
 ]
 
+
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
@@ -722,11 +753,13 @@ app.add_middleware(
     allow_headers=["*"],  # Allow all headers
 )
 
+
 # Create the APIQueryHandler during startup and store it in app.state.
 async def startup_event():
     print("startup_event")
     app.state.handler = APIQueryHandler()
     print("APIQueryHandler instance created at startup.")
+
 
 @app.post("/veridex_query")
 async def veridex_query(request: Request):
@@ -750,7 +783,7 @@ async def veridex_query(request: Request):
     end_time = time.perf_counter()
     duration = end_time - start_time
 
-    # Set latest timestamp
+     # Set latest timestamp
     result.timestamp = time.time()
     result.total_elapsed_time = duration
 
@@ -761,6 +794,7 @@ async def veridex_query(request: Request):
     handler.write_result_file(request_id, result)
 
     return JSONResponse(asdict(result))
+
 
 if __name__ == "__main__":
     import uvicorn
