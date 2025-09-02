@@ -656,18 +656,22 @@ class APIQueryHandler:
         return random.choices(miner_ids, weights=probs, k=number_of_miners)
     
     def generate_weights(self, scores):
+        if not hasattr(scores, "__iter__") or isinstance(scores, (str, bytes)):
+            scores = [scores]
 
-        if not _TORCH_OK:
-            raise RuntimeError("Torch not available for your weight generator please install torch ")
-        weights = []
-        for score in scores:
-            clamped_score = max(-5.0, min(score, 10.0))  # [-5, 10]
-            t = torch.tensor([clamped_score], dtype=torch.float32)
-            normalized_tensor = F.normalize(t, p=2, dim=0)
-            normalized = (normalized_tensor[0].item() + 1) / 2  # map to [0,1]
-            weight = MIN_WEIGHT + normalized * (MAX_WEIGHT - MIN_WEIGHT)
-            weights.append(weight)
-        return weights
+        try:
+            vals = [float(s) for s in scores]
+        except Exception:
+            vals = [0.0 for _ in scores]
+
+        if _TORCH_OK:
+            t = torch.tensor(vals, dtype=torch.float32)
+            if torch.all(t == 0):
+                return [0.0 for _ in vals]
+            t_norm = F.normalize(t, p=2, dim=0)
+            mapped = ((t_norm + 1.0) / 2.0).tolist()
+            weights = [MIN_WEIGHT + v * (MAX_WEIGHT - MIN_WEIGHT) for v in mapped]
+            return weights
 
     def select_miner_subset(self, number_of_miners=5) -> List[MinerSelection]:
         self.refresh_miner_cache()
