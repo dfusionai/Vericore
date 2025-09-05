@@ -31,7 +31,7 @@ from shared.scores import (
     UNRELATED_PAGE_SNIPPET,
     BLACKLISTED_URL_SCORE,
     INVALID_SNIPPET_EXCERPT,
-    SNIPPET_NOT_CONTEXT_SIMILAR, IS_SEARCH_WEB_PAGE, FAKE_SNIPPET
+    IS_SEARCH_WEB_PAGE, FAKE_SNIPPET
 )
 from validator.statement_context_evaluator import assess_statement_async
 from validator.web_page_validator import is_search_web_page
@@ -166,18 +166,16 @@ class SnippetValidator:
 
         # check whether query params is the same as the excerpt
         for key, values in query_params.items():
-            # bt.logging.info(f"{request_id} | {miner_uid} | {miner_evidence.url} | {unquote(values[0])} | {miner_evidence.excerpt} | Checking query parameters")
-            #
-            # is_similar_excerpt, statement_similarity_score,  = await self.is_snippet_similar_to_statement(
-            #     request_id, miner_uid, miner_evidence.url, miner_evidence.excerpt, unquote(values[0]), similarity_query_parameter_threshold
-            # )
-            #
-            # bt.logging.info(f"{request_id} | {miner_uid} | {miner_evidence.url} | {values[0]} | {miner_evidence.excerpt} | Is similar to query parameter: {is_similar_excerpt}, {statement_similarity_score}")
-            #
-            # # Using search as evidence - 5
-            # if is_similar_excerpt:
+            bt.logging.info(f"{request_id} | {miner_uid} | {miner_evidence.url} | {values[0]} | {miner_evidence.excerpt} | Checking query parameters")
 
-            if True:
+            is_similar_excerpt, statement_similarity_score,  = await self.is_snippet_similar_to_statement(
+                request_id, miner_uid, miner_evidence.url, miner_evidence.excerpt, values[0]
+            )
+
+            bt.logging.info(f"{request_id} | {miner_uid} | {miner_evidence.url} | {values[0]} | {miner_evidence.excerpt} | Is similar to query parameter: {is_similar_excerpt}, {statement_similarity_score}")
+
+            # Using search as evidence - 5
+            if is_similar_excerpt:
                 bt.logging.info(f"{request_id} | {miner_uid} | {miner_evidence.url} | {values[0]} | Query Parameter Excerpt is the SAME")
                 snippet_score = USING_SEARCH_AS_EVIDENCE
                 vericore_miner_response = VericoreStatementResponse(
@@ -187,7 +185,7 @@ class SnippetValidator:
                     snippet_found=False,
                     local_score=0.0,
                     snippet_score=snippet_score,
-                    snippet_score_reason="using_search_as_evidence",
+                    snippet_score_reason=f"query_parameter_same_as_evidence ({statement_similarity_score})",
                 )
                 return vericore_miner_response
 
@@ -606,21 +604,22 @@ class SnippetValidator:
                 f"{request_id} | {miner_uid} | {miner_evidence.url} | Context similarity: {context_similarity_score} "
             )
 
-            # Zero score if excerpt isn't context similar to statement
-            if context_similarity_score < MIN_SNIPPET_CONTEXT_SIMILARITY_SCORE:
-                snippet_score = SNIPPET_NOT_CONTEXT_SIMILAR
-                return VericoreStatementResponse(
-                    url=miner_evidence.url,
-                    excerpt=miner_evidence.excerpt,
-                    domain=domain,
-                    snippet_found=False,
-                    local_score=0.0,
-                    snippet_score=snippet_score,
-                    snippet_score_reason="snippet_not_context_similar",
-                    context_similarity_score=context_similarity_score,
-                    assessment_result=assessment_result,
-                    page_text=""
-                )
+            # Taken out for now since AI is checking context similarity - which is a better option
+            # # Zero score if excerpt isn't context similar to statement
+            # if context_similarity_score < MIN_SNIPPET_CONTEXT_SIMILARITY_SCORE:
+            #     snippet_score = SNIPPET_NOT_CONTEXT_SIMILAR
+            #     return VericoreStatementResponse(
+            #         url=miner_evidence.url,
+            #         excerpt=miner_evidence.excerpt,
+            #         domain=domain,
+            #         snippet_found=False,
+            #         local_score=0.0,
+            #         snippet_score=snippet_score,
+            #         snippet_score_reason="snippet_not_context_similar",
+            #         context_similarity_score=context_similarity_score,
+            #         assessment_result=assessment_result,
+            #         page_text=""
+            #     )
 
             # Determine whether statement is neutral/corroborated or refuted
             probs, local_score = await score_statement_distribution(
