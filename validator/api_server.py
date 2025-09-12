@@ -41,7 +41,6 @@ from shared.scores import (
 )
 
 from shared.log_data import LoggerType
-from snippet_validator import run_validate_miner_snippet
 from shared.proxy_log_handler import register_proxy_log_handler
 from validator.snippet_validator import run_validate_miner_snippet
 from validator.active_tester import StatementGenerator
