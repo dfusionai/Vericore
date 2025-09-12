@@ -204,7 +204,7 @@ class SnippetValidator:
                     snippet_found=False,
                     local_score=0.0,
                     snippet_score=snippet_score,
-                    snippet_score_reason="using_search_as_evidence",
+                    snippet_score_reason="using_search_in_url_as_evidence",
                 )
 
             if part_index == len(path_parts) - 1:
@@ -221,7 +221,7 @@ class SnippetValidator:
                         snippet_found=False,
                         local_score=0.0,
                         snippet_score=snippet_score,
-                        snippet_score_reason="using_search_as_evidence",
+                        snippet_score_reason="using_search_as_part_of_url",
                     )
 
                 if "%20" in part:
@@ -250,7 +250,7 @@ class SnippetValidator:
                         snippet_found=False,
                         local_score=0.0,
                         snippet_score=snippet_score,
-                        snippet_score_reason="using_search_as_evidence",
+                        snippet_score_reason="excerpt_is_same_as_url",
                     )
 
         # llm_response = await assess_url_as_fake(
