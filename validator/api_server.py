@@ -592,7 +592,7 @@ class APIQueryHandler:
             if index < miner_cache_length :
                 miner_cache = new_miner_cache[index]
                 if miner_cache.miner_hotkey != neuron.hotkey :
-                    bt.logging.info(f"{self.my_uid} | New Miner found. Resetting miner selection for uid: {index}")
+                    bt.logging.info(f"{self.my_uid} | New Miner found. Resetting miner selection for uid: {index} with registered ip-address {neuron.axon_info.ip}")
                     miner_cache.miner_hotkey = neuron.hotkey
                     miner_cache.neuron_info = neuron
                     miner_cache.scores = 0
