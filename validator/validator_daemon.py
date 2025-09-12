@@ -20,7 +20,7 @@ from shared.validator_results_data import ValidatorResultsData
 
 bt.logging.set_trace()
 
-INITIAL_WEIGHT = 0.0
+INITIAL_WEIGHT = 0.7
 
 
 def get_config():
@@ -182,10 +182,11 @@ def calculate_moving_scores(validator_uid: int, response_directory: str, moving_
                 miner_uid = res.get("miner_uid")
                 final_score = res.get("final_score")
                 if miner_uid is not None and final_score is not None:
+                    # if miner is new, his final score sets the basis for next iteration, else its a weighted score between current and previous results
                     if moving_scores[miner_uid] == 0:
                         calculated_score = final_score
                     else:
-                        calculated_score = (moving_scores[miner_uid] + final_score)/2
+                        calculated_score = moving_scores[miner_uid]*INITIAL_WEIGHT + final_score*(1-INITIAL_WEIGHT)
 
                     bt.logging.info(
                         f"DAEMON | {validator_uid} | Moving score for uid: {miner_uid} and final score: {final_score} with calculated scored {calculated_score}"
@@ -234,7 +235,10 @@ def main():
     os.makedirs(processed_results_dir, exist_ok=True)
 
     my_uid = metagraph.hotkeys.index(wallet.hotkey.ss58_address)
-
+    metagraph.sync()
+    # set initial moving_scores before loop, so it does not clear score history every iteration
+    moving_scores = [0.0] * len(metagraph.S)
+    uid_hotkey_dict={uid: metagraph.hotkeys[uid] for uid in range(len(metagraph.hotkeys))}
     validator_results_data_handler = register_validator_results_data_handler(
         my_uid, wallet
     )
@@ -252,9 +256,15 @@ def main():
             # if True:
                 bt.logging.info(f"DAEMON | {my_uid} | Aggregating results")
                 metagraph.sync()
-
+                # check if uid-hotkey pair changed, if so, remove score history
+                uid_hotkey_dict_temp={uid: metagraph.hotkeys[uid] for uid in range(len(metagraph.hotkeys))}
+                for uid in range(len(metagraph.hotkeys)):
+                    if uid_hotkey_dict[uid]!=uid_hotkey_dict_temp[uid]:
+                        moving_scores[uid]=0.0
+                uid_hotkey_dict=uid_hotkey_dict_temp
+                
                 # create new moving scores array in case new miners have been loaded
-                moving_scores = [INITIAL_WEIGHT] * len(metagraph.S)
+
                 moving_scores, vericore_responses = aggregate_results(
                     my_uid,
                     output_dir,
