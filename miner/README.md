@@ -72,7 +72,7 @@ source "$HOME/.cargo/env"
 #### Bittensor Cli
 
 ```bash
-pip install bittensor
+pip install bittensor-cli
 ```
 
 ### 3. Create Wallets
@@ -94,7 +94,7 @@ The `btcli` tool is used to manage wallets and keys.
    - **Miner Hotkey**:
 
      ```bash
-     btcli w new_hotkey --wallet.name mywallet --wallet.hotkey miner_hotkey --netuid 70
+     btcli w new_hotkey --wallet.name mywallet --wallet.hotkey miner_hotkey
      ```
 
 ### 4. Register Wallets
