@@ -290,8 +290,10 @@ def main():
                 metagraph.sync()
                 # check if uid-hotkey pair changed, if so, remove score history
                 uid_hotkey_dict_temp={uid: metagraph.hotkeys[uid] for uid in range(len(metagraph.hotkeys))}
+
+                cache_size = len(miner_score_cache)
                 for uid in range(len(metagraph.hotkeys)):
-                    if uid >= len(miner_score_cache):
+                    if uid >= cache_size:
                         new_miner_record = WeightedMinerRecord()
                         new_miner_record.wallet_hotkey = uid_hotkey_dict_temp[uid]
                         miner_score_cache.insert(uid, new_miner_record)
@@ -300,7 +302,7 @@ def main():
                         new_miner_record.wallet_hotkey = uid_hotkey_dict_temp[uid]
                         miner_score_cache[uid] = new_miner_record
 
-            # create new moving scores array in case new miners have been loaded
+                # need to cater for if the hotkeys shrink
 
                 vericore_responses, scores_updated = aggregate_results(
                     my_uid,
@@ -309,6 +311,7 @@ def main():
                     miner_score_cache
                 )
 
+                # create new moving scores array in case new miners have been loaded
                 moving_scores= [miner_score_record.calculated_score for miner_score_record in miner_score_cache]
 
                 bt.logging.info(f"DAEMON | {my_uid} | Moving scores: {moving_scores}")
