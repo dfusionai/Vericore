@@ -190,7 +190,10 @@ def calculate_moving_scores(validator_uid: int, response_directory: str, miner_s
                 if miner_uid is not None and final_score is not None:
                     # if miner is new, his final score sets the basis for next iteration, else its a weighted score between current and previous results
                     if miner_score_cache[miner_uid].count <= IMMUNITY_PERIOD:
-                        calculated_score = miner_score_cache[miner_uid].calculated_score * (1 - IMMUNITY_WEIGHT) + final_score * IMMUNITY_WEIGHT
+                        if miner_score_cache[miner_uid].count == 0:
+                            calculated_score = final_score
+                        else:
+                            calculated_score = miner_score_cache[miner_uid].calculated_score * (1 - IMMUNITY_WEIGHT) + final_score * IMMUNITY_WEIGHT
                         bt.logging.info(
                             f"DAEMON | {validator_uid} | Using immunity calculation for uid {miner_uid} average: {calculated_score}"
                         )
@@ -269,8 +272,6 @@ def main():
             miner_record
         )
 
-    # moving_scores = [0.0] * len(metagraph.S)
-    # uid_hotkey_dict={uid: metagraph.hotkeys[uid] for uid in range(len(metagraph.hotkeys))}
     validator_results_data_handler = register_validator_results_data_handler(
         my_uid, wallet
     )
@@ -284,8 +285,8 @@ def main():
             bt.logging.info(
                 f"DAEMON | {my_uid} | Will aggregate results: {last_update} > {tempo + 1} = {last_update > tempo + 1} "
             )
-            # if last_update > tempo + 1:
-            if True:
+            if last_update > tempo + 1:
+            # if True:
                 bt.logging.info(f"DAEMON | {my_uid} | Aggregating results")
                 metagraph.sync()
                 # check if uid-hotkey pair changed, if so, remove score history
