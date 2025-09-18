@@ -11,3 +11,8 @@ AI_API_URL = os.environ.get("AI_API_URL", "https://api.dashboard.vericore.dfusio
 
 USE_HTML_PARSER_API = os.environ.get("USE_HTML_PARSER_API", "False").lower() == 'true'
 HTML_PARSER_API_URL = os.environ.get("HTML_PARSER_API_URL", "https://api.snippet-fetcher.vericore.dfusion.ai")
+
+INITIAL_WEIGHT = 0.7
+
+IMMUNITY_PERIOD = 50
+IMMUNITY_WEIGHT = 0.5

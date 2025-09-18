@@ -9,6 +9,8 @@ import numpy as np
 import bittensor as bt
 import logging
 from typing import List
+
+from shared.environment_variables import INITIAL_WEIGHT, IMMUNITY_WEIGHT, IMMUNITY_PERIOD
 from shared.log_data import LoggerType
 from shared.proxy_log_handler import register_proxy_log_handler
 from shared.store_results_handler import (
@@ -20,10 +22,6 @@ from shared.validator_results_data import ValidatorResultsData
 
 bt.logging.set_trace()
 
-INITIAL_WEIGHT = 0.7
-
-IMMUNITY_PERIOD = 50
-IMMUNITY_WEIGHT = 0.5
 
 class WeightedMinerRecord:
     calculated_score: float = 0
