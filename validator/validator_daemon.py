@@ -284,19 +284,23 @@ def main():
             bt.logging.info(
                 f"DAEMON | {my_uid} | Will aggregate results: {last_update} > {tempo + 1} = {last_update > tempo + 1} "
             )
-            if last_update > tempo + 1:
-            # if True:
+            # if last_update > tempo + 1:
+            if True:
                 bt.logging.info(f"DAEMON | {my_uid} | Aggregating results")
                 metagraph.sync()
                 # check if uid-hotkey pair changed, if so, remove score history
                 uid_hotkey_dict_temp={uid: metagraph.hotkeys[uid] for uid in range(len(metagraph.hotkeys))}
                 for uid in range(len(metagraph.hotkeys)):
-                    if miner_score_cache[uid].wallet_hotkey !=uid_hotkey_dict_temp[uid]:
+                    if uid >= len(miner_score_cache):
+                        new_miner_record = WeightedMinerRecord()
+                        new_miner_record.wallet_hotkey = uid_hotkey_dict_temp[uid]
+                        miner_score_cache.insert(uid, new_miner_record)
+                    elif miner_score_cache[uid].wallet_hotkey !=uid_hotkey_dict_temp[uid]:
                         new_miner_record = WeightedMinerRecord()
                         new_miner_record.wallet_hotkey = uid_hotkey_dict_temp[uid]
                         miner_score_cache[uid] = new_miner_record
 
-                # create new moving scores array in case new miners have been loaded
+            # create new moving scores array in case new miners have been loaded
 
                 vericore_responses, scores_updated = aggregate_results(
                     my_uid,
