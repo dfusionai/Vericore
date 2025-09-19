@@ -49,9 +49,9 @@ You are given the output of a Natural Language Inference (NLI) model to help you
 - snippet_status: One of "SUPPORT", "CONTRADICT", or "UNRELATED", or "FAKE" .
 - is_search_url: true if the URL is a search page and is similar to the statement; otherwise false.
 Definitions:
-- SUPPORT: The excerpt clearly agrees with or provides evidence for the statement.
-- CONTRADICT: The excerpt clearly disagrees with or disproves the statement.
-- UNRELATED: The excerpt does not mention or relate to the subject of the statement at all.
+- SUPPORT: The excerpt clearly agrees with or provides evidence for any part of the statement. Even if it does not cover the entire statement, if it confirms one or more factual components, classify as SUPPORT.
+- CONTRADICT: The excerpt clearly disagrees with or disproves any part of the statement.
+- UNRELATED: The excerpt does not mention or relate to any part of the statement at all.
 - FAKE: The excerpt repeats the statement verbatim or nearly verbatim, but uses vague, evasive, or overly dramatic language that obscures meaning and does not engage meaningfully with the statement. Also if the statement excerpt and webpage is being repeated.
 
 Do not include explanations. Only return the JSON object.

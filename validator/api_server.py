@@ -16,6 +16,7 @@ from contextlib import asynccontextmanager
 
 import bittensor as bt
 
+from shared.environment_variables import VERICORE_VALIDATOR_VERSION, IMMUNITY_PERIOD
 from shared.veridex_protocol import (
     VericoreSynapse,
     VeridexResponse,
@@ -55,9 +56,13 @@ HIGHEST_FINAL_SCORE = 10
 
 ###############################################################################
 
+MIN_CLAMP_SCORE = -5.0
+MAX_CLAMP_SCORE = 10.0
+
 MAX_WEIGHT = 10.0  # Cap on how much weight any miner can have
 MIN_WEIGHT = 1.0  # Floor to give new miners a chance
 EXPLORATION_FACTOR = 0.1  # 10% exploration
+NEW_MINER_BONUS = 2.0
 
 @dataclass
 class MinerSelection:
@@ -616,14 +621,27 @@ class APIQueryHandler:
     def get_weighted_miners(self, miners):
         weights = []
 
+        score_range = MAX_CLAMP_SCORE - MIN_CLAMP_SCORE
         for miner_selection in miners:
-            raw_score = miner_selection.scores
-            clamped_score = max(-5.0, min(raw_score, 10.0))  # [-5, 10]
-            normalized = (clamped_score + 5.0) / 15.0  # maps to [0, 1]
-            weight = MIN_WEIGHT + normalized * (MAX_WEIGHT - MIN_WEIGHT)
-            weights.append((miner_selection.miner_uid, weight))
+            miner_uid = miner_selection.miner_uid
+            raw_score = miner_selection.calculate_average_score()
 
-        total_weight = sum(weight for _,weight in weights)
+            # Clamp and normalize
+            clamped_score = max(MIN_CLAMP_SCORE, min(raw_score, MAX_CLAMP_SCORE))  # [-5, 10]
+            normalized = (clamped_score - MIN_CLAMP_SCORE) / score_range  # maps to [0, 1]
+            weight = MIN_WEIGHT + normalized * (MAX_WEIGHT - MIN_WEIGHT)
+
+            # Treat miners with few requests as "new" and give bonus
+            if miner_selection.request_count < IMMUNITY_PERIOD:
+                # if taper bonus - more the request - the less of a bonus
+                # bonus = NEW_MINER_BONUS * (IMMUNITY_PERIOD - miner_selection.request_count) / IMMUNITY_PERIOD
+                # Allow new miners to be called more
+                bonus = NEW_MINER_BONUS
+                weight += bonus
+
+            weights.append((miner_uid, weight))
+
+        total_weight = sum(weight for _, weight in weights)
         # not sure if this is needed
         if total_weight == 0:
             return [(m, 1.0 / len(weights)) for m, _ in weights]  # fallback: equal chance

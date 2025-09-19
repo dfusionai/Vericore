@@ -9,6 +9,8 @@ import numpy as np
 import bittensor as bt
 import logging
 from typing import List
+
+from shared.environment_variables import INITIAL_WEIGHT, IMMUNITY_WEIGHT, IMMUNITY_PERIOD
 from shared.log_data import LoggerType
 from shared.proxy_log_handler import register_proxy_log_handler
 from shared.store_results_handler import (
@@ -20,8 +22,11 @@ from shared.validator_results_data import ValidatorResultsData
 
 bt.logging.set_trace()
 
-INITIAL_WEIGHT = 0.7
 
+class WeightedMinerRecord:
+    calculated_score: float = 0
+    count: int = 0
+    wallet_hotkey:str = ""
 
 def get_config():
     parser = argparse.ArgumentParser()
@@ -165,11 +170,12 @@ def list_json_files(directory):
         if f.endswith(".json")
     ]
 
-def calculate_moving_scores(validator_uid: int, response_directory: str, moving_scores, vericore_responses, add_to_vericore_responses: bool):
+def calculate_moving_scores(validator_uid: int, response_directory: str, miner_score_cache, vericore_responses, add_to_vericore_responses: bool):
     files = list_json_files(response_directory)
     if not files:
-        return moving_scores, vericore_responses
+        return False
 
+    score_updated = False
     for filepath in files:
         try:
 
@@ -183,15 +189,23 @@ def calculate_moving_scores(validator_uid: int, response_directory: str, moving_
                 final_score = res.get("final_score")
                 if miner_uid is not None and final_score is not None:
                     # if miner is new, his final score sets the basis for next iteration, else its a weighted score between current and previous results
-                    if moving_scores[miner_uid] == 0:
-                        calculated_score = final_score
+                    if miner_score_cache[miner_uid].count <= IMMUNITY_PERIOD:
+                        if miner_score_cache[miner_uid].count == 0:
+                            calculated_score = final_score
+                        else:
+                            calculated_score = miner_score_cache[miner_uid].calculated_score * (1 - IMMUNITY_WEIGHT) + final_score * IMMUNITY_WEIGHT
+                        bt.logging.info(
+                            f"DAEMON | {validator_uid} | Using immunity calculation for uid {miner_uid} average: {calculated_score}"
+                        )
                     else:
-                        calculated_score = moving_scores[miner_uid]*INITIAL_WEIGHT + final_score*(1-INITIAL_WEIGHT)
+                        calculated_score = miner_score_cache[miner_uid].calculated_score * INITIAL_WEIGHT + final_score * (1 - INITIAL_WEIGHT)
 
                     bt.logging.info(
                         f"DAEMON | {validator_uid} | Moving score for uid: {miner_uid} and final score: {final_score} with calculated scored {calculated_score}"
                     )
-                    moving_scores[miner_uid] = calculated_score
+                    miner_score_cache[miner_uid].count = miner_score_cache[miner_uid].count + 1
+                    miner_score_cache[miner_uid].calculated_score = calculated_score
+                    score_updated = True
 
         except Exception as e:
             bt.logging.error(f"DAEMON | {validator_uid} | Error processing file {filepath}: {e}")
@@ -201,21 +215,33 @@ def calculate_moving_scores(validator_uid: int, response_directory: str, moving_
                 bt.logging.info(f"DAEMON | {validator_uid} | Deleted processed file {filepath}")
             except Exception as e:
                 bt.logging.error(f"DAEMON | {validator_uid} | Error deleting file {filepath}: {e}")
-    return moving_scores, vericore_responses
+    return score_updated
 
 
-def aggregate_results(validator_uid: int, results_dir, processed_results_dir, moving_scores):
+def aggregate_results(validator_uid: int, results_dir, processed_results_dir, miner_score_cache):
     """
     Scan the results directory for JSON files (each a query result), update moving_scores
     for each miner based on the reported final_score, then delete each processed file.
     """
     vericore_responses = []
 
-    calculate_moving_scores(validator_uid, results_dir, moving_scores, vericore_responses, add_to_vericore_responses=True)
+    score_updated_results = calculate_moving_scores(
+        validator_uid,
+        results_dir,
+        miner_score_cache,
+        vericore_responses,
+        add_to_vericore_responses=True
+    )
 
-    calculate_moving_scores(validator_uid, processed_results_dir, moving_scores, vericore_responses, add_to_vericore_responses=False)
+    score_updated_processed = calculate_moving_scores(
+        validator_uid,
+        processed_results_dir,
+        miner_score_cache,
+        vericore_responses,
+        add_to_vericore_responses=False
+    )
 
-    return moving_scores, vericore_responses
+    return vericore_responses, score_updated_processed or score_updated_results
 
 def generate_unique_id(validator_uid: int) -> str:
     timestamp = int(time.time() * 1000)
@@ -237,8 +263,15 @@ def main():
     my_uid = metagraph.hotkeys.index(wallet.hotkey.ss58_address)
     metagraph.sync()
     # set initial moving_scores before loop, so it does not clear score history every iteration
-    moving_scores = [0.0] * len(metagraph.S)
-    uid_hotkey_dict={uid: metagraph.hotkeys[uid] for uid in range(len(metagraph.hotkeys))}
+    miner_score_cache = []
+    for uid in range(len(metagraph.hotkeys)):
+        miner_record = WeightedMinerRecord()
+        miner_record.wallet_hotkey = metagraph.hotkeys[uid]
+        miner_score_cache.insert(
+            uid,
+            miner_record
+        )
+
     validator_results_data_handler = register_validator_results_data_handler(
         my_uid, wallet
     )
@@ -258,23 +291,33 @@ def main():
                 metagraph.sync()
                 # check if uid-hotkey pair changed, if so, remove score history
                 uid_hotkey_dict_temp={uid: metagraph.hotkeys[uid] for uid in range(len(metagraph.hotkeys))}
-                for uid in range(len(metagraph.hotkeys)):
-                    if uid_hotkey_dict[uid]!=uid_hotkey_dict_temp[uid]:
-                        moving_scores[uid]=0.0
-                uid_hotkey_dict=uid_hotkey_dict_temp
-                
-                # create new moving scores array in case new miners have been loaded
 
-                moving_scores, vericore_responses = aggregate_results(
+                cache_size = len(miner_score_cache)
+                for uid in range(len(metagraph.hotkeys)):
+                    if uid >= cache_size:
+                        new_miner_record = WeightedMinerRecord()
+                        new_miner_record.wallet_hotkey = uid_hotkey_dict_temp[uid]
+                        miner_score_cache.insert(uid, new_miner_record)
+                    elif miner_score_cache[uid].wallet_hotkey !=uid_hotkey_dict_temp[uid]:
+                        new_miner_record = WeightedMinerRecord()
+                        new_miner_record.wallet_hotkey = uid_hotkey_dict_temp[uid]
+                        miner_score_cache[uid] = new_miner_record
+
+                # need to cater for if the hotkeys shrink
+
+                vericore_responses, scores_updated = aggregate_results(
                     my_uid,
                     output_dir,
                     processed_results_dir,
-                    moving_scores
+                    miner_score_cache
                 )
+
+                # create new moving scores array in case new miners have been loaded
+                moving_scores= [miner_score_record.calculated_score for miner_score_record in miner_score_cache]
 
                 bt.logging.info(f"DAEMON | {my_uid} | Moving scores: {moving_scores}")
 
-                if all(scores == 0 for scores in moving_scores):
+                if not scores_updated:
                     bt.logging.warning(f"DAEMON | {my_uid} | Skipped setting of weights")
                     # Sleep for 10 seconds
                     time.sleep(10)
