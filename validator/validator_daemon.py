@@ -366,8 +366,8 @@ def main():
                 deltas = arr.max() - arr
                 exp_dec = np.exp(-deltas / scale)
                 weights = ((exp_dec / exp_dec.sum()) * 65535).tolist()
-                weights_burned = burn_weights(weights, metagraph) if ENABLE_EMISSION_CONTROL else weights
-                bt.logging.info(f"DAEMON | {my_uid} | Setting weights on chain: {weights}")
+                weights_burned = burn_weights(weights, metagraph).tolist() if ENABLE_EMISSION_CONTROL else weights
+                bt.logging.info(f"DAEMON | {my_uid} | Setting weights on chain: {weights_burned}")
                 subtensor.set_weights(
                     netuid=config.netuid,
                     wallet=wallet,
