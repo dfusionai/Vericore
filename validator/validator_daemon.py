@@ -8,7 +8,6 @@ import traceback
 import numpy as np
 import bittensor as bt
 import logging
-import torch
 from typing import List
 
 from shared.environment_variables import INITIAL_WEIGHT, IMMUNITY_WEIGHT, IMMUNITY_PERIOD
@@ -35,30 +34,28 @@ def find_target_uid(metagraph, hotkey):
 
 def burn_weights(weights, metagraph):
     target_uid = find_target_uid(metagraph, EMISSION_CONTROL_HOTKEY)
-
     if not target_uid:
         bt.logging.info(f"target emission control hotkey {EMISSION_CONTROL_HOTKEY} is not found")
         return weights
-
-    total_score = torch.sum(weights)
-
+    
+    total_score = np.sum(weights)
     new_target_score = EMISSION_CONTROL_PERC * total_score
     remaining_weight = (1 - EMISSION_CONTROL_PERC) * total_score
     total_other_scores = total_score - weights[target_uid]
-
+    
     if total_other_scores == 0:
         bt.logging.warning("All scores are zero except target UID, cannot scale.")
         return weights
-
-    new_scores = torch.zeros_like(weights, dtype=float)
+    
+    new_scores = np.zeros_like(weights, dtype=float)
     uids = metagraph.uids
-
+    
     for i, (uid, weight) in enumerate(zip(uids, weights)):
         if uid == target_uid:
             new_scores[i] = new_target_score
         else:
             new_scores[i] = (weight / total_other_scores) * remaining_weight
-
+    
     return new_scores
 
 
