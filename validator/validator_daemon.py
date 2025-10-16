@@ -362,7 +362,7 @@ def main():
 
                 bt.logging.info(f"DAEMON | {my_uid} | Moving scores: {moving_scores}")
                 arr = np.array(moving_scores, dtype=np.float32)
-                scale = 8.0
+                scale = 4.0
                 deltas = arr.max() - arr
                 exp_dec = np.exp(-deltas / scale)
                 weights = ((exp_dec / exp_dec.sum()) * 65535).tolist()
