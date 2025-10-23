@@ -157,11 +157,11 @@ class APIQueryHandler:
 
     async def call_axon(self, miner_uid, request_id, target_axon, synapse):
         start_time = time.time()
-        bt.logging.info(f"{request_id} | Calling axon {target_axon.hotkey}")
+        bt.logging.info(f"{self.my_uid} | {request_id} | Calling axon {target_axon.hotkey}")
         response = await self.dendrite.call(
             target_axon=target_axon, synapse=synapse, timeout=120, deserialize=True
         )
-        bt.logging.info(f"{request_id} | {miner_uid} | Called axon {target_axon.hotkey} | Received response {response}")
+        bt.logging.info(f"{self.my_uid} | {request_id} | {miner_uid} | Called axon {target_axon.hotkey} | Received response {response}")
         end_time = time.time()
         elapsed = end_time - start_time + 1e-9
         veridex_response: VeridexResponse = VeridexResponse(
@@ -180,7 +180,7 @@ class APIQueryHandler:
         # Could not find miner key - Shouldn't get here!
         if miner_uid is None:
             bt.logging.warning(
-                f"{request_id} | Could not find miner uid for hotkey {miner_hotkey} "
+                f"{self.my_uid} | {request_id} | Could not find miner uid for hotkey {miner_hotkey} "
             )
             miner_statement = VericoreMinerStatementResponse(
                 miner_hotkey="", miner_uid=-1, status="invalid_miner", raw_score=0, final_score=0,
@@ -190,7 +190,7 @@ class APIQueryHandler:
         # Check if miner has any axon information
         if neuron.axon_info is None:
             bt.logging.warning(
-                f"{request_id} | {miner_uid} | Miner doesn't have axon info"
+                f"{self.my_uid} | {request_id} | {miner_uid} | Miner doesn't have axon info"
             )
             miner_statement = VericoreMinerStatementResponse(
                 miner_hotkey=miner_hotkey, miner_uid=miner_uid, status="unreachable_miner", raw_score=UNREACHABLE_MINER_SCORE, final_score=UNREACHABLE_MINER_SCORE
@@ -200,7 +200,7 @@ class APIQueryHandler:
         # Check if miner has valid ip address
         if not neuron.axon_info.is_serving:
             bt.logging.warning(
-                f"{request_id} | {miner_uid} | Miner doesn't have reachable ip address"
+                f"{self.my_uid} | {request_id} | {miner_uid} | Miner doesn't have reachable ip address"
             )
             miner_statement = VericoreMinerStatementResponse(
                 miner_hotkey=miner_hotkey, miner_uid=miner_uid, status="unreachable_miner", raw_score=UNREACHABLE_MINER_SCORE, final_score=UNREACHABLE_MINER_SCORE
@@ -222,7 +222,7 @@ class APIQueryHandler:
             or miner_response.synapse.veridex_response is None
         ):
             bt.logging.warning(
-                f"{request_id} | {miner_uid} | No miner response received"
+                f"{self.my_uid} | {request_id} | {miner_uid} | No miner response received"
             )
             miner_statement = VericoreMinerStatementResponse(
                 miner_hotkey=miner_hotkey,
@@ -236,7 +236,7 @@ class APIQueryHandler:
         veridex_responses: List[SourceEvidence] = miner_response.synapse.veridex_response
         if len(veridex_responses) == 0:
             bt.logging.warning(
-                f"{request_id} | {miner_uid} | Miner didn't return any statements"
+                f"{self.my_uid} | {request_id} | {miner_uid} | Miner didn't return any statements"
             )
             miner_statement = VericoreMinerStatementResponse(
                 miner_hotkey=miner_hotkey,
@@ -293,7 +293,7 @@ class APIQueryHandler:
             if miner_statement is not None:
                 return miner_statement
 
-            bt.logging.info(f"{request_id} | { miner_uid } | Calling axon ")
+            bt.logging.info(f"{self.my_uid} | {request_id} | { miner_uid } | Calling axon ")
 
             # Call the miner
             try:
@@ -301,7 +301,7 @@ class APIQueryHandler:
                     target_axon=neuron.axon_info, request_id=request_id, synapse=synapse, miner_uid=neuron.uid
                 )
             except Exception as e:
-                bt.logging.error(f"{request_id} | {miner_uid} | An error has occurred calling miner with error: {e}")
+                bt.logging.error(f"{self.my_uid} | {request_id} | {miner_uid} | An error has occurred calling miner with error: {e}")
                 # exception could have been from us?
                 final_score = INVALID_RESPONSE_MINER_SCORE
                 miner_statement = VericoreMinerStatementResponse(
@@ -314,7 +314,7 @@ class APIQueryHandler:
                 return miner_statement
 
             bt.logging.info(
-                f"{request_id} | { miner_uid } | Received miner information"
+                f"{self.my_uid} | {request_id} | { miner_uid } | Received miner information"
             )
 
             miner_statement = self.validate_miner_response(
@@ -325,13 +325,13 @@ class APIQueryHandler:
             )
             if miner_statement is not None:
                 bt.logging.warning(
-                    f"{request_id} | {miner_uid} | Invalid miner response received"
+                    f"{self.my_uid} | {request_id} | {miner_uid} | Invalid miner response received"
                 )
                 return miner_statement
 
 
             # Process Vericore response data
-            bt.logging.info(f"{request_id} | {miner_uid} | Verifying Miner Statements. Received {len(miner_response.synapse.veridex_response)} responses. Only Processing {MAX_MINER_RESPONSES}")
+            bt.logging.info(f"{self.my_uid} | {request_id} | {miner_uid} | Verifying Miner Statements. Received {len(miner_response.synapse.veridex_response)} responses. Only Processing {MAX_MINER_RESPONSES}")
 
             # Create tasks
             tasks = [
@@ -358,11 +358,11 @@ class APIQueryHandler:
                     )
                 )
 
-            bt.logging.info(f"{request_id} | {miner_uid} | Scoring Miner Statements Based on Snippets")
+            bt.logging.info(f"{self.my_uid} | {request_id} | {miner_uid} | Scoring Miner Statements Based on Snippets")
 
             domain_counts = {}
 
-            bt.logging.info(f"{request_id} | {miner_uid} | Calculating miner scores")
+            bt.logging.info(f"{self.my_uid} | {request_id} | {miner_uid} | Calculating miner scores")
 
             # Check how many times the domain count was reused
             for statement_response in vericore_statement_responses:
@@ -393,15 +393,15 @@ class APIQueryHandler:
             # Calculate final score considering speed factor
             speed_factor = self.calculate_speed_factor(miner_response.elapse_time)
 
-            bt.logging.info(f"{request_id} | {miner_uid} | Calculated Speed Factor: {speed_factor} | Miner response: {miner_response.elapse_time}")
+            bt.logging.info(f"{self.my_uid} | {request_id} | {miner_uid} | Calculated Speed Factor: {speed_factor} | Miner response: {miner_response.elapse_time}")
             final_score = sum_of_snippets * speed_factor
-            bt.logging.info(f"{request_id} | {miner_uid} | Final Score: {final_score} | Sum Of Snippets: {sum_of_snippets}")
+            bt.logging.info(f"{self.my_uid} | {request_id} | {miner_uid} | Final Score: {final_score} | Sum Of Snippets: {sum_of_snippets}")
             if is_test and is_nonsense and final_score > 0.5:
                 final_score -= 1.0
 
             final_score = max(LOWEST_FINAL_SCORE, final_score)
 
-            bt.logging.info(f"{request_id} | {miner_uid} | Calculated Final Score: {final_score}")
+            bt.logging.info(f"{self.my_uid} | {request_id} | {miner_uid} | Calculated Final Score: {final_score}")
 
             miner_statement = VericoreMinerStatementResponse(
                 miner_hotkey=miner_hotkey,
@@ -415,7 +415,7 @@ class APIQueryHandler:
             )
             return miner_statement
         except Exception as e:
-            bt.logging.error(f"{request_id} | {miner_uid} | An error has occurred: {e}")
+            bt.logging.error(f"{self.my_uid} | {request_id} | {miner_uid} | An error has occurred: {e}")
             # exception could have been from us?
             miner_statement = VericoreMinerStatementResponse(
                 miner_hotkey=miner_hotkey,
@@ -476,7 +476,7 @@ class APIQueryHandler:
                             break
 
                     if is_same:
-                        bt.logging.warning(f"{request_id} | Duplicate miner statement found: {target_miner.miner_uid} AND {source_miner.miner_uid}")
+                        bt.logging.warning(f"{self.my_uid} | {request_id} | Duplicate miner statement found: {target_miner.miner_uid} AND {source_miner.miner_uid}")
                         # penalise target miner since elapsed is slower than source and has exact excerpt and url
                         target_miner.status = "duplicate_miner_statements"
                         target_miner.raw_score = DUPLICATE_EXACT_MINER_STATEMENTS
@@ -506,7 +506,7 @@ class APIQueryHandler:
         subset_miners = self.select_miner_subset(number_of_miners=NUMBER_OF_MINERS)
 
         selected_miners = ' '.join(f'[{miner.miner_uid} / {miner.calculate_average_score()}]' for miner in subset_miners)
-        bt.logging.info(f"{request_id} | Selected miners: {selected_miners}")
+        bt.logging.info(f"{self.my_uid} | {request_id} | Selected miners: {selected_miners}")
 
         synapse = VericoreSynapse(
             statement=statement, sources=sources, request_id=request_id
@@ -519,9 +519,9 @@ class APIQueryHandler:
             ]
         )
 
-        bt.logging.info(f"{request_id} | Completed all miner requests")
+        bt.logging.info(f"{self.my_uid} | {request_id} | Completed all miner requests")
 
-        bt.logging.info(f"{request_id} | Checking duplicate miner statements")
+        bt.logging.info(f"{self.my_uid} | {request_id} | Checking duplicate miner statements")
 
         # add for debug
         # import copy
@@ -532,7 +532,7 @@ class APIQueryHandler:
 
         responses = self.check_duplicate_miner_statements(request_id, responses)
 
-        bt.logging.info(f"{request_id} | Duplicate miner statement check complete")
+        bt.logging.info(f"{self.my_uid} | {request_id} | Duplicate miner statement check complete")
 
         response = VericoreQueryResponse(
             status="ok",
@@ -544,12 +544,12 @@ class APIQueryHandler:
             results=responses,
         )
 
-        bt.logging.info(f"{request_id} | Refreshing selection cache")
+        bt.logging.info(f"{self.my_uid} | {request_id} | Refreshing selection cache")
 
         # Update miner selection score cache
         self.update_miner_selection_cache(responses)
 
-        bt.logging.info(f"{request_id} | Selection cache refreshed")
+        bt.logging.info(f"{self.my_uid} | {request_id} | Selection cache refreshed")
 
         return response
 
@@ -558,15 +558,15 @@ class APIQueryHandler:
         try:
             with open(filename, "w") as f:
                 json.dump(asdict(result), f)
-            bt.logging.info(f"{request_id} | Wrote result file: {filename}")
+            bt.logging.info(f"{self.my_uid} | {request_id} | Wrote result file: {filename}")
         except Exception as e:
             bt.logging.error(f"Error writing result file {filename}: {e}")
 
     def loading_miners(self, neurons: List[NeuronInfo]):
-        bt.logging.info(f"{self.my_uid} | Loading Miners")
+        bt.logging.info(f"{self.my_uid} | {self.my_uid} | Loading Miners")
         # return [n for n in neurons if not n.validator_permit]
         if self.miner_cache is None or len(self.miner_cache) == 0:
-            bt.logging.info(f"{self.my_uid} | Loading brand new miners")
+            bt.logging.info(f"{self.my_uid} | {self.my_uid} | Loading brand new miners")
             return [
                 MinerSelection(
                     miner_uid=index,
@@ -659,7 +659,7 @@ class APIQueryHandler:
     def select_miner_subset(self, number_of_miners=5) -> List[MinerSelection]:
         self.refresh_miner_cache()
 
-        bt.logging.info(f"Selecting miner subset")
+        bt.logging.info(f"{self.my_uid} | Selecting miner subset")
 
         all_miners = self.miner_cache
 
@@ -669,7 +669,7 @@ class APIQueryHandler:
         # calculate the weights
         weighted_miners = self.get_weighted_miners(all_miners)
 
-        bt.logging.info(f"Weights calculated for miners")
+        bt.logging.info(f"{self.my_uid} | Weights calculated for miners")
 
         # select the miners index  based on the weights
         selected_miner_indexes = self.select_miner(weighted_miners, number_of_miners)
@@ -680,7 +680,7 @@ class APIQueryHandler:
         null_miners = [miner for miner in selected_miners if miner.neuron_info.axon_info is None or not miner.neuron_info.axon_info.is_serving]
 
         if null_miners:
-            bt.logging.warning(f"Detected {len(null_miners)} miners with null axons. Fetching replacements...")
+            bt.logging.warning(f"{self.my_uid} | Detected {len(null_miners)} miners with null axons. Fetching replacements...")
 
             available_replacement_ids = [miner.miner_uid for miner in all_miners if miner not in selected_miners and miner.neuron_info.axon_info is not None and miner.neuron_info.axon_info.is_serving]
 
@@ -696,7 +696,7 @@ class APIQueryHandler:
                 else:
                     break
 
-        bt.logging.info(f"Selected {len(selected_miner_indexes)} miners with {len(null_miners)} null axons")
+        bt.logging.info(f"{self.my_uid} | Selected {len(selected_miner_indexes)} miners with {len(null_miners)} null axons")
 
         # recalculate all miners to be returned
         selected_miners =  [all_miners[i] for i in selected_miner_indexes]
@@ -745,6 +745,10 @@ async def startup_event():
     print("startup_event")
     app.state.handler = APIQueryHandler()
     print("APIQueryHandler instance created at startup.")
+
+@app.get("/version")
+async def version():
+    return VERICORE_VALIDATOR_VERSION
 
 @app.post("/veridex_query")
 async def veridex_query(request: Request):
