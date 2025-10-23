@@ -51,6 +51,9 @@ class VericoreStatementResponse():
   approved_url_multiplier:float=0
   page_text: str = ""
   assessment_result: dict = field(default_factory=dict)
+  verify_miner_time_taken_secs: float=0
+  fetch_page_time_taken_secs: float=0
+  assess_statement_time_taken_secs: float=0
 
 @dataclass
 class VericoreMinerStatementResponse():
