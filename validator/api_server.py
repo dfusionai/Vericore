@@ -106,18 +106,18 @@ class APIQueryHandler:
         parser = argparse.ArgumentParser()
         parser.add_argument("--custom", default="my_custom_value", help="Custom value")
         parser.add_argument("--netuid", type=int, default=1, help="Chain subnet uid")
-        bt.subtensor.add_args(parser)
+        bt.Subtensor.add_args(parser)
         bt.logging.add_args(parser)
-        bt.wallet.add_args(parser)
-        bt.axon.add_args(parser)
-        config = bt.config(parser)
+        bt.Wallet.add_args(parser)
+        bt.Axon.add_args(parser)
+        config = bt.Config(parser)
 
         bt.logging.info(f"get_config: {config}")
         config.full_path = os.path.expanduser(
             "{}/{}/{}/netuid{}/validator".format(
                 config.logging.logging_dir,
                 config.wallet.name,
-                config.wallet.hotkey_str,
+                config.wallet.hotkey,
                 config.netuid,
             )
         )
@@ -133,17 +133,19 @@ class APIQueryHandler:
 
     def setup_bittensor_objects(self):
         bt.logging.info("Setting up Bittensor objects for API Server.")
-        self.wallet = bt.wallet(config=self.config)
+        self.wallet = bt.Wallet(config=self.config)
         bt.logging.info(f"Wallet: {self.wallet}")
-        self.subtensor = bt.subtensor(config=self.config)
+        self.subtensor = bt.Subtensor(config=self.config)
         bt.logging.info(f"Subtensor: {self.subtensor}")
+        bt.logging.info(f"Subtensor: {self.subtensor}")
+
         # Create the dendrite (used to query miners)
-        self.dendrite = bt.dendrite(wallet=self.wallet)
+        self.dendrite = bt.Dendrite(wallet=self.wallet)
         bt.logging.info(f"Dendrite: {self.dendrite}")
         self.metagraph = self.subtensor.metagraph(self.config.netuid)
         bt.logging.info(f"Metagraph: {self.metagraph}")
 
-        self.axon = bt.axon(wallet=self.wallet, config=self.config)
+        self.axon = bt.Axon(wallet=self.wallet, config=self.config)
         self.axon.serve(netuid=self.config.netuid, subtensor=self.subtensor)
 
         if self.wallet.hotkey.ss58_address not in self.metagraph.hotkeys:

@@ -37,25 +37,25 @@ def burn_weights(weights, metagraph):
     if not target_uid:
         bt.logging.info(f"target emission control hotkey {EMISSION_CONTROL_HOTKEY} is not found")
         return weights
-    
+
     total_score = np.sum(weights)
     new_target_score = EMISSION_CONTROL_PERC * total_score
     remaining_weight = (1 - EMISSION_CONTROL_PERC) * total_score
     total_other_scores = total_score - weights[target_uid]
-    
+
     if total_other_scores == 0:
         bt.logging.warning("All scores are zero except target UID, cannot scale.")
         return weights
-    
+
     new_scores = np.zeros_like(weights, dtype=float)
     uids = metagraph.uids
-    
+
     for i, (uid, weight) in enumerate(zip(uids, weights)):
         if uid == target_uid:
             new_scores[i] = new_target_score
         else:
             new_scores[i] = (weight / total_other_scores) * remaining_weight
-    
+
     return new_scores
 
 
@@ -68,15 +68,15 @@ def get_config():
     parser = argparse.ArgumentParser()
     parser.add_argument("--custom", default="my_custom_value", help="Custom value")
     parser.add_argument("--netuid", type=int, default=1, help="Chain subnet uid")
-    bt.subtensor.add_args(parser)
+    bt.Subtensor.add_args(parser)
     bt.logging.add_args(parser)
-    bt.wallet.add_args(parser)
-    config = bt.config(parser)
+    bt.Wallet.add_args(parser)
+    config = bt.Config(parser)
     config.full_path = os.path.expanduser(
         "{}/{}/{}/netuid{}/validator".format(
             config.logging.logging_dir,
             config.wallet.name,
-            config.wallet.hotkey_str,
+            config.wallet.hotkey,
             config.netuid,
         )
     )
@@ -84,9 +84,9 @@ def get_config():
     return config
 
 def setup_bittensor_objects(config):
-    wallet = bt.wallet(config=config)
+    wallet = bt.Wallet(config=config)
     bt.logging.info(f"Wallet: {wallet}")
-    subtensor = bt.subtensor(config=config)
+    subtensor = bt.Subtensor(config=config)
     bt.logging.info(f"Subtensor: {subtensor}")
     metagraph = subtensor.metagraph(config.netuid)
     bt.logging.info(f"Metagraph: {metagraph}")
