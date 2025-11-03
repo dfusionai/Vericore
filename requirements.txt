@@ -1,4 +1,4 @@
-bittensor===9.9.0
+bittensor===10.0.0rc2
 sanic
 webdriver_manager
 lxml
