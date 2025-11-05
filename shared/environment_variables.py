@@ -17,5 +17,5 @@ VERICORE_VALIDATOR_VERSION = os.environ.get("VERICORE_VALIDATOR_VERSION", "v0.0.
 INITIAL_WEIGHT = 0.7
 
 NEUTRAL_SCORE=10
-IMMUNITY_PERIOD = 350 # Ensures new miners have a full day to prove themselves, even if other miners have been idle.
+IMMUNITY_PERIOD = 100 # Ensures new miners have a full day to prove themselves, even if other miners have been idle.
 IMMUNITY_WEIGHT = 0.5
