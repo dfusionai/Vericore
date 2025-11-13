@@ -24,7 +24,7 @@ bt.logging.set_trace()
 
 ENABLE_EMISSION_CONTROL = True
 EMISSION_CONTROL_HOTKEY = "5FWMeS6ED6NG6t5ovKQNZvGWEWVtZPve5BhYWM9wics5FgJ9"
-EMISSION_CONTROL_PERC = 0.5
+EMISSION_CONTROL_PERC = 0.45
 
 def find_target_uid(metagraph, hotkey):
     for neuron in metagraph.neurons:
@@ -33,31 +33,74 @@ def find_target_uid(metagraph, hotkey):
             return emission_control_uid
 
 def burn_weights(weights, metagraph):
+    """
+    Apply emission control by burning weights and redistributing to target UID.
+
+    Args:
+        weights: Array of weights to be processed
+        metagraph: Bittensor metagraph object
+
+    Returns:
+        Processed weights with emission control applied
+    """
     target_uid = find_target_uid(metagraph, EMISSION_CONTROL_HOTKEY)
     if not target_uid:
         bt.logging.info(f"target emission control hotkey {EMISSION_CONTROL_HOTKEY} is not found")
         return weights
-    
+
+    # Ensure target_uid is within bounds
+    if target_uid >= len(weights):
+        bt.logging.warning(f"Target UID {target_uid} is out of bounds for weights array of length {len(weights)}")
+        return weights
+
     total_score = np.sum(weights)
     new_target_score = EMISSION_CONTROL_PERC * total_score
     remaining_weight = (1 - EMISSION_CONTROL_PERC) * total_score
     total_other_scores = total_score - weights[target_uid]
-    
+
     if total_other_scores == 0:
         bt.logging.warning("All scores are zero except target UID, cannot scale.")
         return weights
-    
+
     new_scores = np.zeros_like(weights, dtype=float)
     uids = metagraph.uids
-    
+
     for i, (uid, weight) in enumerate(zip(uids, weights)):
         if uid == target_uid:
             new_scores[i] = new_target_score
         else:
             new_scores[i] = (weight / total_other_scores) * remaining_weight
-    
+
     return new_scores
 
+def move_miner_weights(moving_scores, metagraph, my_uid):
+    """
+    Convert moving scores to normalized weights with exponential decay and optional emission control burning.
+
+    Args:
+        moving_scores: List of calculated scores for each miner
+        metagraph: Bittensor metagraph object
+        my_uid: Validator UID for logging purposes
+
+    Returns:
+        List of processed weights ready to be set on chain
+    """
+    bt.logging.info(f"DAEMON | {my_uid} | Moving scores: {moving_scores}")
+    arr = np.array(moving_scores, dtype=np.float32)
+    scale = 4.0
+    deltas = arr.max() - arr
+    exp_dec = np.exp(-deltas / scale)
+    weights = ((exp_dec / exp_dec.sum()) * 65535).tolist()
+
+    # Apply emission control burning if enabled
+    if ENABLE_EMISSION_CONTROL:
+        weights_burned = burn_weights(weights, metagraph).tolist()
+    else:
+        weights_burned = weights
+
+    bt.logging.info(f"DAEMON | {my_uid} | Setting weights on chain: {weights_burned}")
+
+    return weights_burned
 
 class WeightedMinerRecord:
     calculated_score: float = 0
@@ -360,14 +403,8 @@ def main():
                     # Don't update weights if  all moving scores are 0 otherwise it might rate the weights equally.
                     continue
 
-                bt.logging.info(f"DAEMON | {my_uid} | Moving scores: {moving_scores}")
-                arr = np.array(moving_scores, dtype=np.float32)
-                scale = 4.0
-                deltas = arr.max() - arr
-                exp_dec = np.exp(-deltas / scale)
-                weights = ((exp_dec / exp_dec.sum()) * 65535).tolist()
-                weights_burned = burn_weights(weights, metagraph).tolist() if ENABLE_EMISSION_CONTROL else weights
-                bt.logging.info(f"DAEMON | {my_uid} | Setting weights on chain: {weights_burned}")
+                weights_burned = move_miner_weights(moving_scores, metagraph, my_uid)
+
                 subtensor.set_weights(
                     netuid=config.netuid,
                     wallet=wallet,
