@@ -2,3 +2,5 @@ __pycache__/
 env-veridex
 env/
 miner/openai/
+output/
+results/
