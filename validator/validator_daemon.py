@@ -25,6 +25,8 @@ bt.logging.set_trace()
 ENABLE_EMISSION_CONTROL = True
 EMISSION_CONTROL_HOTKEY = "5FWMeS6ED6NG6t5ovKQNZvGWEWVtZPve5BhYWM9wics5FgJ9"
 EMISSION_CONTROL_PERC = 0.45
+USE_RANKING_EMISSION_CONTROL = True
+RANKING_EMISSION_TOP_PERC = 0.5
 
 def find_target_uid(metagraph, hotkey):
     for neuron in metagraph.neurons:
@@ -32,7 +34,48 @@ def find_target_uid(metagraph, hotkey):
             emission_control_uid = neuron.uid
             return emission_control_uid
 
-def burn_weights(weights, metagraph):
+def find_burn_miner(weights, metagraph):
+    """
+    Validate and find the target burn miner UID.
+
+    Args:
+        weights: Array of weights to be processed
+        metagraph: Bittensor metagraph object
+
+    Returns:
+        Target UID if found and valid, None otherwise
+    """
+    target_uid = find_target_uid(metagraph, EMISSION_CONTROL_HOTKEY)
+    if target_uid is None:
+        bt.logging.info(f"target emission control hotkey {EMISSION_CONTROL_HOTKEY} is not found")
+        return None
+
+    # Ensure target_uid is within bounds
+    if target_uid >= len(weights):
+        bt.logging.warning(f"Target UID {target_uid} is out of bounds for weights array of length {len(weights)}")
+        return None
+
+    return target_uid
+
+def burn_weights(weights, metagraph, use_ranking=False):
+    """
+    Apply emission control by burning weights and redistributing.
+
+    Args:
+        weights: Array of weights to be processed
+        metagraph: Bittensor metagraph object
+        use_ranking: If True, use ranking-based distribution (50%, 25%, 12.5%, etc.)
+                    If False, use fixed target UID redistribution
+
+    Returns:
+        Processed weights with emission control applied
+    """
+    if use_ranking:
+        return burn_weights_by_ranking(weights, metagraph)
+    else:
+        return burn_weights_by_percentage(weights, metagraph)
+
+def burn_weights_by_percentage(weights, metagraph):
     """
     Apply emission control by burning weights and redistributing to target UID.
 
@@ -43,14 +86,8 @@ def burn_weights(weights, metagraph):
     Returns:
         Processed weights with emission control applied
     """
-    target_uid = find_target_uid(metagraph, EMISSION_CONTROL_HOTKEY)
-    if not target_uid:
-        bt.logging.info(f"target emission control hotkey {EMISSION_CONTROL_HOTKEY} is not found")
-        return weights
-
-    # Ensure target_uid is within bounds
-    if target_uid >= len(weights):
-        bt.logging.warning(f"Target UID {target_uid} is out of bounds for weights array of length {len(weights)}")
+    target_uid = find_burn_miner(weights, metagraph)
+    if target_uid is None:
         return weights
 
     total_score = np.sum(weights)
@@ -70,6 +107,98 @@ def burn_weights(weights, metagraph):
             new_scores[i] = new_target_score
         else:
             new_scores[i] = (weight / total_other_scores) * remaining_weight
+
+    return new_scores
+
+def burn_weights_by_ranking(weights, metagraph):
+    """
+    Apply emission control by ranking weights and redistributing in decreasing percentages.
+    Top miner gets 50%, second gets 25%, third gets 12.5%, etc. of the remaining weights.
+
+    Args:
+        weights: Array of weights to be processed
+        metagraph: Bittensor metagraph object
+
+    Returns:
+        Processed weights with ranking-based emission control applied
+    """
+    if len(weights) == 0:
+        return weights
+
+    total_score = np.sum(weights)
+    if total_score == 0:
+        bt.logging.warning("All weights are zero, cannot apply ranking-based emission control.")
+        return weights
+
+    target_uid = find_burn_miner(weights, metagraph)
+    if target_uid is None:
+        return weights
+
+    new_target_score = EMISSION_CONTROL_PERC * total_score
+    remaining_weight = (1 - EMISSION_CONTROL_PERC) * total_score
+
+    # Validate metagraph and ensure uids are within bounds
+    uids = metagraph.uids
+    if len(uids) != len(weights):
+        bt.logging.warning(f"Mismatch between uids length ({len(uids)}) and weights length ({len(weights)})")
+        return weights
+
+    # Ensure weights array is within reasonable bounds
+    if len(weights) > len(metagraph.neurons):
+        bt.logging.warning(f"Weights array length ({len(weights)}) exceeds neuron count ({len(metagraph.neurons)})")
+        return weights
+
+    new_scores = np.zeros_like(weights, dtype=float)
+
+    # Set target UID to receive the emission control percentage
+    new_scores[target_uid] = new_target_score
+
+    # Create list of (index, weight) pairs excluding target_uid, and sort by weight (descending)
+    weight_pairs = [(i, weight) for i, weight in enumerate(weights) if i != target_uid]
+    weight_pairs.sort(key=lambda x: x[1], reverse=True)
+
+    bt.logging.info(f"DAEMON | Applying ranking-based emission control: target UID {target_uid} gets {new_target_score:.4f}, distributing {remaining_weight:.4f} across miners")
+    bt.logging.info(f"DAEMON | Top {min(len(weight_pairs), 10)} weights (excluding target): {[f'{w:.4f}' for _, w in weight_pairs[:10]]}")
+
+    # Use remaining_weight for distribution (already calculated as (1 - EMISSION_CONTROL_PERC) * total_score)
+    distribution_weight = remaining_weight
+    current_percentage = RANKING_EMISSION_TOP_PERC  # Start with 50% for top miner
+
+    # Distribute remaining_weight based on ranking (excluding target_uid)
+    for i, (weight_index, original_weight) in enumerate(weight_pairs):
+        if current_percentage <= 0 or distribution_weight <= 0:
+            break
+
+        if i == 0:
+            # Top miner gets percentage of remaining weights
+            allocated_weight = distribution_weight * RANKING_EMISSION_TOP_PERC
+        else:
+            # Each subsequent miner gets half the percentage of remaining weights
+            current_percentage *= 0.5
+            allocated_weight = distribution_weight * current_percentage
+
+        new_scores[weight_index] = allocated_weight
+        distribution_weight -= allocated_weight
+
+        bt.logging.info(f"DAEMON | Ranking {i+1} (UID {weight_index}): {current_percentage*100:.1f}% of remaining -> {allocated_weight:.4f}")
+
+    # Distribute any remaining weight proportionally among remaining miners
+    if distribution_weight > 0:
+        # Find indices that received weights in the ranking distribution (excluding target_uid)
+        allocated_indices = [target_uid]  # Start with target_uid
+        for pair in weight_pairs:
+            if new_scores[pair[0]] > 0:
+                allocated_indices.append(pair[0])
+
+        # Find remaining indices that didn't get any allocation
+        remaining_indices = [i for i in range(len(weights)) if i not in allocated_indices]
+
+        if remaining_indices:
+            proportional_allocation = distribution_weight / len(remaining_indices)
+            for idx in remaining_indices:
+                new_scores[idx] = proportional_allocation
+
+    bt.logging.info(f"DAEMON | Ranking-based emission control applied. Original total: {total_score:.4f}, New total: {np.sum(new_scores):.4f}")
 
     return new_scores
 
@@ -94,7 +223,7 @@ def move_miner_weights(moving_scores, metagraph, my_uid):
 
     # Apply emission control burning if enabled
     if ENABLE_EMISSION_CONTROL:
-        weights_burned = burn_weights(weights, metagraph).tolist()
+        weights_burned = burn_weights(weights, metagraph, USE_RANKING_EMISSION_CONTROL).tolist()
     else:
         weights_burned = weights
 
