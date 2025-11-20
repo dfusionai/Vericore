@@ -10,6 +10,13 @@ from dataclasses import asdict
 from shared.veridex_protocol import SourceEvidence
 from validator.snippet_fetcher import SnippetFetcher
 
+# Array of hard-coded test URLs for snippet fetching
+TEST_URLS = [
+    "https://nmaahc.si.edu/explore/stories/unforgettable-nat-king-cole-flip-wilson-american-television",
+    "https://www.pbs.org/wnet/nature/blog/killer-whale-fact-sheet/",
+    "https://hms.harvard.edu/news/screen-time-brain"
+]
+
 def get_config():
     parser = argparse.ArgumentParser()
     parser.add_argument("--custom", default="my_custom_value", help="Custom value")
@@ -52,10 +59,61 @@ async def main(url):
         duration = time.perf_counter() - start
         print(f"Time taken for {url}:  {duration:.4f} seconds")
 
+async def main_all_urls():
+    """Fetch all URLs in the TEST_URLS array"""
+    miner_uid = 1
+    snippet_fetcher = SnippetFetcher()
+
+    try:
+        for i, url in enumerate(TEST_URLS):
+            print(f"\n{'='*80}")
+            print(f"Fetching URL {i+1}/{len(TEST_URLS)}: {url}")
+            print(f"{'='*80}\n")
+
+            start = time.perf_counter()
+            try:
+                page_text = await snippet_fetcher.fetch_entire_page(f"test-{i}", miner_uid, url)
+                duration = time.perf_counter() - start
+
+                print(f"\n{'='*80}")
+                print(f"Result for {url}:")
+                print(f"Length: {len(page_text)} characters")
+                print(f"Time taken: {duration:.4f} seconds")
+                print(f"{'='*80}\n")
+                print(page_text[:500] + "..." if len(page_text) > 500 else page_text)
+                print("\n")
+            except Exception as e:
+                duration = time.perf_counter() - start
+                print(f"Error fetching {url}: {e} (took {duration:.4f} seconds)")
+    finally:
+        await snippet_fetcher.client.aclose()
+
 # Entry point
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run Snippet Fetcher for url.")
-    parser.add_argument("--url", type=str, default="https://studyfinds.org/content-overload-streaming", help="Page to fetch")
+    parser.add_argument(
+        "--url",
+        type=str,
+        default=TEST_URLS[0],
+        help="Page to fetch (default: first URL in TEST_URLS array)"
+    )
+    parser.add_argument(
+        "--all",
+        action="store_true",
+        help="Fetch all URLs in TEST_URLS array"
+    )
+    parser.add_argument(
+        "--list",
+        action="store_true",
+        help="List all URLs in TEST_URLS array"
+    )
     args = parser.parse_args()
 
-    asyncio.run(main(args.url))
+    if args.list:
+        print("Available test URLs:")
+        for i, url in enumerate(TEST_URLS, 1):
+            print(f"  {i}. {url}")
+    elif args.all:
+        asyncio.run(main_all_urls())
+    else:
+        asyncio.run(main(args.url))
