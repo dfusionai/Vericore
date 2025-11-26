@@ -24,7 +24,13 @@ bt.logging.set_trace()
 
 ENABLE_EMISSION_CONTROL = True
 EMISSION_CONTROL_HOTKEY = "5FWMeS6ED6NG6t5ovKQNZvGWEWVtZPve5BhYWM9wics5FgJ9"
-EMISSION_CONTROL_PERC = 0.5
+EMISSION_CONTROL_PERC = 0.50
+USE_RANKING_EMISSION_CONTROL = True
+RANKING_EMISSION_TOP_PERC = 0.5
+
+# Weight distribution constants
+DEFAULT_TOTAL_WEIGHT = 65535.0  # Standard Bittensor weight total
+EXPONENTIAL_DECAY_SCALE = 4.0  # Scaling factor for exponential decay distribution
 
 def find_target_uid(metagraph, hotkey):
     for neuron in metagraph.neurons:
@@ -32,32 +38,165 @@ def find_target_uid(metagraph, hotkey):
             emission_control_uid = neuron.uid
             return emission_control_uid
 
-def burn_weights(weights, metagraph):
+def find_burn_miner(weights, metagraph):
+    """
+    Validate and find the target burn miner UID.
+
+    Args:
+        weights: Array of weights to be processed
+        metagraph: Bittensor metagraph object
+
+    Returns:
+        Target UID if found and valid, None otherwise
+    """
     target_uid = find_target_uid(metagraph, EMISSION_CONTROL_HOTKEY)
-    if not target_uid:
+    if target_uid is None:
         bt.logging.info(f"target emission control hotkey {EMISSION_CONTROL_HOTKEY} is not found")
+        return None
+
+    # Ensure target_uid is within bounds
+    if target_uid >= len(weights):
+        bt.logging.warning(f"Target UID {target_uid} is out of bounds for weights array of length {len(weights)}")
+        return None
+
+    return target_uid
+
+def burn_weights(weights, metagraph):
+    """
+    Apply emission control by burning weights and redistributing to target UID.
+
+    Args:
+        weights: Array of weights to be processed
+        metagraph: Bittensor metagraph object
+
+    Returns:
+        Processed weights with emission control applied
+    """
+    target_uid = find_burn_miner(weights, metagraph)
+    if target_uid is None:
         return weights
-    
+
     total_score = np.sum(weights)
     new_target_score = EMISSION_CONTROL_PERC * total_score
     remaining_weight = (1 - EMISSION_CONTROL_PERC) * total_score
     total_other_scores = total_score - weights[target_uid]
-    
+
     if total_other_scores == 0:
         bt.logging.warning("All scores are zero except target UID, cannot scale.")
         return weights
-    
+
     new_scores = np.zeros_like(weights, dtype=float)
     uids = metagraph.uids
-    
+
     for i, (uid, weight) in enumerate(zip(uids, weights)):
         if uid == target_uid:
             new_scores[i] = new_target_score
         else:
             new_scores[i] = (weight / total_other_scores) * remaining_weight
-    
+
     return new_scores
 
+def distribute_weights_by_ranking(moving_scores, total_weight=DEFAULT_TOTAL_WEIGHT, top_percentage=RANKING_EMISSION_TOP_PERC):
+    """
+    Distribute weights using ranking-based geometric progression.
+    Top miner gets top_percentage (default RANKING_EMISSION_TOP_PERC), second gets 25%, third gets 12.5%, etc.
+
+    Args:
+        moving_scores: List of calculated scores for each miner
+        total_weight: Total weight to distribute (default DEFAULT_TOTAL_WEIGHT)
+        top_percentage: Percentage of total weight for top miner (default RANKING_EMISSION_TOP_PERC)
+
+    Returns:
+        List of normalized weights summing to total_weight (as integers)
+    """
+    if len(moving_scores) == 0:
+        return []
+
+    # Sort scores descending
+    sorted_pairs = sorted(enumerate(moving_scores), key=lambda x: x[1], reverse=True)
+    weights = [0.0] * len(moving_scores)
+    current_percentage = top_percentage
+
+    # Distribute weights based on ranking
+    for i, (idx, _) in enumerate(sorted_pairs):
+        if i == 0:
+            allocated = total_weight * top_percentage
+        else:
+            current_percentage *= 0.5
+            allocated = total_weight * current_percentage
+        weights[idx] = allocated
+
+    # Give any remainder to the first miner to ensure sum is exactly total_weight
+    weight_sum = sum(weights)
+    if weight_sum > 0 and weight_sum < total_weight:
+        # Add remainder to top miner
+        top_idx = sorted_pairs[0][0]
+        weights[top_idx] += (total_weight - weight_sum)
+
+    return [int(round(w)) for w in weights]
+
+def distribute_weights_by_exponential_decay(moving_scores, total_weight=DEFAULT_TOTAL_WEIGHT, scale=EXPONENTIAL_DECAY_SCALE):
+    """
+    Distribute weights using exponential decay based on score differences.
+    Higher scores receive exponentially more weight than lower scores.
+
+    Args:
+        moving_scores: List of calculated scores for each miner
+        total_weight: Total weight to distribute (default DEFAULT_TOTAL_WEIGHT)
+        scale: Scaling factor for exponential decay (default EXPONENTIAL_DECAY_SCALE)
+               Higher values result in more gradual decay
+
+    Returns:
+        List of normalized weights summing to total_weight
+    """
+    arr = np.array(moving_scores, dtype=np.float32)
+    deltas = arr.max() - arr
+    exp_dec = np.exp(-deltas / scale)
+    weights = ((exp_dec / exp_dec.sum()) * total_weight).tolist()
+    return weights
+
+def convert_scores_to_weights(moving_scores, use_ranking=True):
+    """
+    Convert moving scores to normalized weights using exponential decay or ranking-based distribution.
+
+    Args:
+        moving_scores: List of calculated scores for each miner
+        use_ranking: If True, use ranking-based distribution (top miner gets RANKING_EMISSION_TOP_PERC, second 25%, etc.)
+                     If False, use exponential decay
+
+    Returns:
+        List of normalized weights summing to DEFAULT_TOTAL_WEIGHT
+    """
+    if use_ranking:
+        return distribute_weights_by_ranking(moving_scores)
+    else:
+        return distribute_weights_by_exponential_decay(moving_scores)
+
+
+def move_miner_weights(moving_scores, metagraph, my_uid):
+    """
+    Convert moving scores to normalized weights with exponential decay and optional emission control burning.
+
+    Args:
+        moving_scores: List of calculated scores for each miner
+        metagraph: Bittensor metagraph object
+        my_uid: Validator UID for logging purposes
+
+    Returns:
+        List of processed weights ready to be set on chain
+    """
+    bt.logging.info(f"DAEMON | {my_uid} | Moving scores: {moving_scores}")
+    weights = convert_scores_to_weights(moving_scores, use_ranking=USE_RANKING_EMISSION_CONTROL)
+
+    # Apply emission control burning if enabled
+    if ENABLE_EMISSION_CONTROL:
+        weights_burned = burn_weights(weights, metagraph).tolist()
+    else:
+        weights_burned = weights
+
+    bt.logging.info(f"DAEMON | {my_uid} | Setting weights on chain: {weights_burned}")
+
+    return weights_burned
 
 class WeightedMinerRecord:
     calculated_score: float = 0
@@ -360,14 +499,8 @@ def main():
                     # Don't update weights if  all moving scores are 0 otherwise it might rate the weights equally.
                     continue
 
-                bt.logging.info(f"DAEMON | {my_uid} | Moving scores: {moving_scores}")
-                arr = np.array(moving_scores, dtype=np.float32)
-                scale = 4.0
-                deltas = arr.max() - arr
-                exp_dec = np.exp(-deltas / scale)
-                weights = ((exp_dec / exp_dec.sum()) * 65535).tolist()
-                weights_burned = burn_weights(weights, metagraph).tolist() if ENABLE_EMISSION_CONTROL else weights
-                bt.logging.info(f"DAEMON | {my_uid} | Setting weights on chain: {weights_burned}")
+                weights_burned = move_miner_weights(moving_scores, metagraph, my_uid)
+
                 subtensor.set_weights(
                     netuid=config.netuid,
                     wallet=wallet,
