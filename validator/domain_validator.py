@@ -2,7 +2,7 @@ import whois
 import bittensor as bt
 import sys
 import asyncio
-from datetime import datetime
+from datetime import datetime, timezone
 
 domain_limiter = asyncio.Semaphore(5) # Max 5 concurrent threads
 
@@ -26,7 +26,13 @@ async def domain_is_recently_registered(domain) -> bool:
                 # Give benefit of doubt if error happened: return False
                 return False
 
-            return (datetime.now() - creation_date).days <= 30  # Adjust the days threshold
+            # Ensure both datetimes are timezone-aware for comparison
+            now = datetime.now(timezone.utc)
+            if creation_date.tzinfo is None:
+                # If creation_date is naive, assume it's UTC
+                creation_date = creation_date.replace(tzinfo=timezone.utc)
+            
+            return (now - creation_date).days <= 30  # Adjust the days threshold
         except Exception as e:
             # Give benefit of doubt if error happened: return False
             bt.logging.error(f"Error validating domain: {e}")
