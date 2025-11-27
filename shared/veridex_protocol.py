@@ -54,6 +54,12 @@ class VericoreStatementResponse():
   verify_miner_time_taken_secs: float=0
   fetch_page_time_taken_secs: float=0
   assess_statement_time_taken_secs: float=0
+  sentiment: float = 0.0
+  conviction: float = 0.0
+  source_credibility: float = 0.0
+  narrative_momentum: float = 0.0
+  risk_reward_sentiment: float = 0.0
+  catalyst_detection: float = 0.0
 
 @dataclass
 class VericoreMinerStatementResponse():

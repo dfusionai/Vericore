@@ -40,6 +40,30 @@ MIN_SNIPPET_CONTEXT_SIMILARITY_SCORE = .65
 
 class SnippetValidator:
 
+    def _extract_assessment_signals(self, assessment_result: dict) -> dict:
+        """
+        Extract the additional signals from assessment_result dict.
+        Returns a dict with default values of 0.0 if signals are not present.
+        """
+        if not assessment_result:
+            return {
+                "sentiment": 0.0,
+                "conviction": 0.0,
+                "source_credibility": 0.0,
+                "narrative_momentum": 0.0,
+                "risk_reward_sentiment": 0.0,
+                "catalyst_detection": 0.0
+            }
+
+        return {
+            "sentiment": float(assessment_result.get("sentiment", 0.0)),
+            "conviction": float(assessment_result.get("conviction", 0.0)),
+            "source_credibility": float(assessment_result.get("source_credibility", 0.0)),
+            "narrative_momentum": float(assessment_result.get("narrative_momentum", 0.0)),
+            "risk_reward_sentiment": float(assessment_result.get("risk_reward_sentiment", 0.0)),
+            "catalyst_detection": float(assessment_result.get("catalyst_detection", 0.0))
+        }
+
     def _extract_domain(self, url: str) -> str:
         parsed = urlparse(url)
 
@@ -542,6 +566,7 @@ class SnippetValidator:
             if assessment_result is not None:
                 snippet_result = assessment_result.get("snippet_status")
                 is_search_url = assessment_result.get("is_search_url")
+
                 if snippet_result == "UNRELATED":
                     snippet_score = UNRELATED_PAGE_SNIPPET
                     return VericoreStatementResponse(
@@ -653,6 +678,7 @@ class SnippetValidator:
             )
 
             end_time = time.time()
+            signals = self._extract_assessment_signals(assessment_result) if assessment_result else self._extract_assessment_signals({})
             vericore_miner_response = VericoreStatementResponse(
                 url=miner_evidence.url,
                 excerpt=miner_evidence.excerpt,
@@ -669,6 +695,12 @@ class SnippetValidator:
                 statement_similarity_score=statement_similarity_score,
                 is_similar_context=is_similar_excerpt,
                 assessment_result=assessment_result,
+                sentiment=signals["sentiment"],
+                conviction=signals["conviction"],
+                source_credibility=signals["source_credibility"],
+                narrative_momentum=signals["narrative_momentum"],
+                risk_reward_sentiment=signals["risk_reward_sentiment"],
+                catalyst_detection=signals["catalyst_detection"],
                 verify_miner_time_taken_secs=end_time - start_time,
                 fetch_page_time_taken_secs=fetch_page_time_taken_secs,
                 assess_statement_time_taken_secs=assess_statement_time_taken_secs
