@@ -43,8 +43,17 @@ You are given the output of a Natural Language Inference (NLI) model to help you
         - local_score = contradiction + entailment (do not subtract neutrality)
         to determine confidence in classification.
 
+        In addition to the basic classification, evaluate the following signals:
+
+        1. **Sentiment**: Assess the positive/negative sentiment of the excerpt regarding the statement. Values: -1.0 (strongly negative) to 1.0 (strongly positive), 0.0 (neutral).
+        2. **Conviction**: Measure how certain and confident the excerpt is in its position. Values: 0.0 (uncertain/hedging) to 1.0 (high conviction/definitive).
+        3. **Source Credibility**: Evaluate the credibility and authority of the source based on domain, author, publication, and content quality. Values: 0.0 (low credibility/questionable) to 1.0 (high credibility/authoritative).
+        4. **Narrative Momentum**: Assess whether the excerpt contributes to building a compelling narrative or story around the statement. Values: 0.0 (static/no momentum) to 1.0 (high momentum/engaging narrative).
+        5. **Risk-Reward Sentiment**: Evaluate the excerpt's perspective on potential risks vs rewards related to the statement. Values: -1.0 (risk-focused/cautionary) to 1.0 (reward-focused/optimistic), 0.0 (balanced).
+        6. **Catalyst Detection**: Determine if the excerpt identifies or discusses catalysts, triggers, or key events that could cause change related to the statement. Values: 0.0 (no catalyst mentioned) to 1.0 (clear catalyst identified).
+
         Return the reason for your answer as well as the result: Return the reason for your score.
-        {{ "reason:"", "snippet_status": "SUPPORT", "is_search_url": false, "score": {{ "contradiction": 0.0, "entailment": 0.0, "neutral": 0.0 }}   }}
+        {{ "reason": "", "snippet_status": "SUPPORT", "is_search_url": false, "score": {{ "contradiction": 0.0, "entailment": 0.0, "neutral": 0.0 }}, "sentiment": 0.0, "conviction": 0.0, "source_credibility": 0.0, "narrative_momentum": 0.0, "risk_reward_sentiment": 0.0, "catalyst_detection": 0.0 }}
 
 - snippet_status: One of "SUPPORT", "CONTRADICT", or "UNRELATED", or "FAKE" .
 - is_search_url: true if the URL is a search page and is similar to the statement; otherwise false.
@@ -53,6 +62,14 @@ Definitions:
 - CONTRADICT: The excerpt clearly disagrees with or disproves any part of the statement.
 - UNRELATED: The excerpt does not mention or relate to any part of the statement at all.
 - FAKE: The excerpt repeats the statement verbatim or nearly verbatim, but uses vague, evasive, or overly dramatic language that obscures meaning and does not engage meaningfully with the statement. Also if the statement excerpt and webpage is being repeated.
+
+Signal Definitions:
+- sentiment: Positive/negative emotional tone toward the statement. Positive values indicate favorable sentiment, negative values indicate unfavorable sentiment.
+- conviction: Level of certainty and confidence expressed. High conviction shows definitive language, low conviction shows hedging, qualifiers, or uncertainty.
+- source_credibility: Trustworthiness and authority of the source. Consider domain reputation, author credentials, publication quality, and content rigor.
+- narrative_momentum: Ability to build an engaging story or narrative around the statement. High momentum creates interest and forward movement in the narrative.
+- risk_reward_sentiment: Focus on risks (negative) vs rewards/opportunities (positive). Risk-focused content emphasizes dangers, costs, or downsides. Reward-focused content emphasizes benefits, opportunities, or upsides.
+- catalyst_detection: Identification of triggers, events, or factors that could cause change or action related to the statement. Catalysts are specific, actionable events or conditions.
 
 Do not include explanations. Only return the JSON object.
 """
