@@ -5,6 +5,7 @@ miner/openai/
 miner/best_miner/
 output/
 results/
+result_processed/
 .idea/
 .env
 weights_tracking/
