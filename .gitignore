@@ -7,3 +7,4 @@ output/
 results/
 .idea/
 .env
+weights_tracking/

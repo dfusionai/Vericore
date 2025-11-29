@@ -9,6 +9,7 @@ import numpy as np
 import bittensor as bt
 import logging
 from typing import List
+from datetime import datetime
 
 from shared.environment_variables import INITIAL_WEIGHT, IMMUNITY_WEIGHT, IMMUNITY_PERIOD
 from shared.log_data import LoggerType
@@ -27,6 +28,7 @@ EMISSION_CONTROL_HOTKEY = "5FWMeS6ED6NG6t5ovKQNZvGWEWVtZPve5BhYWM9wics5FgJ9"
 EMISSION_CONTROL_PERC = 0.50
 USE_RANKING_EMISSION_CONTROL = True
 RANKING_EMISSION_TOP_PERC = 0.5
+ENABLE_WEIGHTS_TRACKING = False
 
 # Weight distribution constants
 DEFAULT_TOTAL_WEIGHT = 65535.0  # Standard Bittensor weight total
@@ -424,6 +426,66 @@ def generate_unique_id(validator_uid: int) -> str:
     return f"{timestamp}{random_suffix}{str(validator_uid).zfill(3)}"
 
 
+def save_weights_tracking(moving_scores, weights_burned, metagraph, my_uid, incentives=None, tracking_dir="weights_tracking"):
+    """
+    Save moving scores and weights burned calculations to a JSON file for tracking.
+    Creates a new file with datetime in the filename for each tracking entry.
+
+    Args:
+        moving_scores: List of calculated moving scores for each miner
+        weights_burned: List of final weights after burning/emission control
+        metagraph: Bittensor metagraph object
+        my_uid: Validator UID
+        incentives: Optional list of incentives for each miner
+        tracking_dir: Directory to save tracking files
+    """
+    try:
+        # Create tracking directory if it doesn't exist
+        os.makedirs(tracking_dir, exist_ok=True)
+
+        # Get current block number if available
+        try:
+            block_number = metagraph.block.item() if hasattr(metagraph.block, 'item') else int(metagraph.block)
+        except:
+            block_number = -1
+
+        # Generate filename with datetime
+        timestamp = datetime.utcnow()
+        filename = f"weights_tracking_{timestamp.strftime('%Y%m%d_%H%M%S')}_{my_uid}_{block_number}.json"
+        tracking_file = os.path.join(tracking_dir, filename)
+
+        # Create tracking entry
+        tracking_entry = {
+            "timestamp": timestamp.isoformat(),
+            "validator_uid": my_uid,
+            "block_number": block_number,
+            "total_miners": len(moving_scores),
+            "miners": []
+        }
+
+        # Add data for each miner
+        for uid in range(len(moving_scores)):
+            miner_data = {
+                "uid": int(uid),
+                "hotkey": metagraph.hotkeys[uid] if uid < len(metagraph.hotkeys) else "unknown",
+                "moving_score": float(moving_scores[uid]) if uid < len(moving_scores) else 0.0,
+                "weight_burned": float(weights_burned[uid]) if uid < len(weights_burned) else 0.0
+            }
+            # Add incentive if available
+            if incentives is not None and uid < len(incentives):
+                miner_data["incentive"] = float(incentives[uid])
+            tracking_entry["miners"].append(miner_data)
+
+        # Save to file (each file contains a single entry)
+        with open(tracking_file, 'w') as f:
+            json.dump(tracking_entry, f, indent=2)
+
+        bt.logging.info(f"DAEMON | {my_uid} | Saved weights tracking to {tracking_file}")
+
+    except Exception as e:
+        bt.logging.error(f"DAEMON | {my_uid} | Error saving weights tracking: {e}")
+
+
 def main():
     config = get_config()
     wallet, subtensor, metagraph = setup_bittensor_objects(config)
@@ -513,6 +575,10 @@ def main():
                     neuron.incentive
                     for neuron in subtensor.neurons(netuid=config.netuid)
                 ]
+
+                # Save tracking data for moving scores, weights burned, and incentives
+                if ENABLE_WEIGHTS_TRACKING:
+                    save_weights_tracking(moving_scores, weights_burned, metagraph, my_uid, incentives)
 
                 bt.logging.info(f"DAEMON | {my_uid} | Preparing to send json data")
 
