@@ -211,7 +211,6 @@ def distribute_weights_by_exponential_decay(moving_scores, total_weight=DEFAULT_
         total_weight: Total weight to distribute (default DEFAULT_TOTAL_WEIGHT)
         scale: Scaling factor for exponential decay (default EXPONENTIAL_DECAY_SCALE)
                Higher values result in more gradual decay
-        exclude_uids: Set of UIDs to exclude from weight distribution (e.g., validators)
 
     Returns:
         List of normalized weights summing to total_weight
