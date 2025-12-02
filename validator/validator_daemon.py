@@ -8,6 +8,9 @@ import traceback
 import numpy as np
 import bittensor as bt
 import logging
+import re
+import subprocess
+import codecs
 from typing import List
 
 from shared.environment_variables import INITIAL_WEIGHT, IMMUNITY_WEIGHT, IMMUNITY_PERIOD
@@ -423,6 +426,33 @@ def generate_unique_id(validator_uid: int) -> str:
     random_suffix = random.randint(1000, 9999)
     return f"{timestamp}{random_suffix}{str(validator_uid).zfill(3)}"
 
+def update_repository():
+    bt.logging.info("checking repository updates")
+    try:
+        subprocess.run(["git", "pull"], check=True)
+    except subprocess.CalledProcessError:
+        bt.logging.error("Git pull failed")
+        return False
+
+    here = os.path.abspath(os.path.dirname(__file__))
+    parent_dir = os.path.dirname(here) 
+    init_file_path = os.path.join(parent_dir, '__init__.py')
+    
+    with codecs.open(init_file_path, encoding='utf-8') as init_file:
+        version_match = re.search(r"^__version__ = ['\"]([^'\"]*)['\"]", init_file.read(), re.M)
+        if version_match:
+            new_version = version_match.group(1)
+            current_version = __version__ 
+            bt.logging.success(f"current version: {current_version}, new version: {new_version}")
+            if current_version != new_version:
+                try:
+                    # subprocess.run(["python3", "voiceguard/utils/download.py"], check=True)
+                    subprocess.run(["python3", "-m", "pip", "install", "-e", "."], check=True)
+                    os._exit(1)
+                except subprocess.CalledProcessError:
+                    bt.logging.error("Pip install failed")
+        else:
+            bt.logging.info("No changes detected!")
 
 def main():
     config = get_config()
@@ -542,6 +572,11 @@ def main():
                     validator_results_data_handler=validator_results_data_handler,
                 )
 
+            if step % 5 == 0:
+                update_repository()
+
+            step += 1
+            
             metagraph.sync()
 
             time.sleep(60)
