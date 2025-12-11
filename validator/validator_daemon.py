@@ -9,6 +9,7 @@ import numpy as np
 import bittensor as bt
 import logging
 from typing import List
+from datetime import datetime
 
 from shared.environment_variables import INITIAL_WEIGHT, IMMUNITY_WEIGHT, IMMUNITY_PERIOD
 from shared.log_data import LoggerType
@@ -27,6 +28,7 @@ EMISSION_CONTROL_HOTKEY = "5FWMeS6ED6NG6t5ovKQNZvGWEWVtZPve5BhYWM9wics5FgJ9"
 EMISSION_CONTROL_PERC = 0.50
 USE_RANKING_EMISSION_CONTROL = True
 RANKING_EMISSION_TOP_PERC = 0.5
+ENABLE_WEIGHTS_TRACKING = False
 
 # Weight distribution constants
 DEFAULT_TOTAL_WEIGHT = 65535.0  # Standard Bittensor weight total
@@ -37,6 +39,34 @@ def find_target_uid(metagraph, hotkey):
         if neuron.hotkey == hotkey:
             emission_control_uid = neuron.uid
             return emission_control_uid
+
+def get_validator_uids(metagraph, subtensor, netuid):
+    """
+    Identify validator UIDs using validator_permit from neurons.
+
+    Args:
+        metagraph: Bittensor metagraph object
+        subtensor: Bittensor subtensor object
+        netuid: Network UID
+
+    Returns:
+        Set of UIDs that are validators
+    """
+    validator_uids = set()
+    try:
+        # Get neurons to check validator_permit
+        neurons = subtensor.neurons(netuid=netuid)
+
+        for neuron in neurons:
+            if neuron.validator_permit and neuron.axon_info.is_serving:
+                validator_uids.add(neuron.uid)
+
+        bt.logging.info(f"Found {len(validator_uids)} validators with validator_permit: {sorted(validator_uids)}")
+
+    except Exception as e:
+        bt.logging.warning(f"Error identifying validators: {e}")
+
+    return validator_uids
 
 def find_burn_miner(weights, metagraph):
     """
@@ -61,42 +91,66 @@ def find_burn_miner(weights, metagraph):
 
     return target_uid
 
-def burn_weights(weights, metagraph):
+def burn_weights(weights, metagraph, exclude_uids=None, subtensor=None, netuid=None):
     """
     Apply emission control by burning weights and redistributing to target UID.
 
     Args:
         weights: Array of weights to be processed
         metagraph: Bittensor metagraph object
+        exclude_uids: Set of UIDs to exclude from weight redistribution (e.g., validators)
+        subtensor: Bittensor subtensor object (for validator identification if needed)
+        netuid: Network UID (for validator identification if needed)
 
     Returns:
         Processed weights with emission control applied
     """
+    exclude_uids = exclude_uids or set()
     target_uid = find_burn_miner(weights, metagraph)
     if target_uid is None:
         return weights
 
+    # Exclude validators and target from total calculation for redistribution
+    uids = metagraph.uids
+    valid_weights = np.array([w if uid not in exclude_uids and uid != target_uid else 0.0
+                              for uid, w in zip(uids, weights)])
+
     total_score = np.sum(weights)
     new_target_score = EMISSION_CONTROL_PERC * total_score
     remaining_weight = (1 - EMISSION_CONTROL_PERC) * total_score
-    total_other_scores = total_score - weights[target_uid]
+    total_other_scores = np.sum(valid_weights)
 
     if total_other_scores == 0:
-        bt.logging.warning("All scores are zero except target UID, cannot scale.")
+        bt.logging.warning("All scores are zero except target UID and excluded UIDs, cannot scale.")
         return weights
 
     new_scores = np.zeros_like(weights, dtype=float)
-    uids = metagraph.uids
 
     for i, (uid, weight) in enumerate(zip(uids, weights)):
         if uid == target_uid:
             new_scores[i] = new_target_score
+        elif uid in exclude_uids:
+            # Validators get zero weight
+            new_scores[i] = 0.0
         else:
             new_scores[i] = (weight / total_other_scores) * remaining_weight
 
+    # Ensure sum is exactly total_score (handle floating point precision)
+    actual_sum = np.sum(new_scores)
+    if abs(actual_sum - total_score) > 1e-6:  # Only adjust if significant difference
+        diff = total_score - actual_sum
+        # Add/subtract difference to target UID to maintain exact total
+        target_idx = None
+        for i, uid in enumerate(uids):
+            if uid == target_uid:
+                target_idx = i
+                break
+        if target_idx is not None:
+            new_scores[target_idx] += diff
+
     return new_scores
 
-def distribute_weights_by_ranking(moving_scores, total_weight=DEFAULT_TOTAL_WEIGHT, top_percentage=RANKING_EMISSION_TOP_PERC):
+def distribute_weights_by_ranking(moving_scores, total_weight=DEFAULT_TOTAL_WEIGHT, top_percentage=RANKING_EMISSION_TOP_PERC, exclude_uids=None):
     """
     Distribute weights using ranking-based geometric progression.
     Top miner gets top_percentage (default RANKING_EMISSION_TOP_PERC), second gets 25%, third gets 12.5%, etc.
@@ -105,6 +159,7 @@ def distribute_weights_by_ranking(moving_scores, total_weight=DEFAULT_TOTAL_WEIG
         moving_scores: List of calculated scores for each miner
         total_weight: Total weight to distribute (default DEFAULT_TOTAL_WEIGHT)
         top_percentage: Percentage of total weight for top miner (default RANKING_EMISSION_TOP_PERC)
+        exclude_uids: Set of UIDs to exclude from weight distribution (e.g., validators)
 
     Returns:
         List of normalized weights summing to total_weight (as integers)
@@ -112,12 +167,23 @@ def distribute_weights_by_ranking(moving_scores, total_weight=DEFAULT_TOTAL_WEIG
     if len(moving_scores) == 0:
         return []
 
-    # Sort scores descending
-    sorted_pairs = sorted(enumerate(moving_scores), key=lambda x: x[1], reverse=True)
+    exclude_uids = exclude_uids or set()
+
+    # Sort scores descending, excluding validators
+    sorted_pairs = sorted(
+        [(idx, score) for idx, score in enumerate(moving_scores) if idx not in exclude_uids],
+        key=lambda x: x[1],
+        reverse=True
+    )
+
+    if len(sorted_pairs) == 0:
+        # All UIDs excluded, return zeros
+        return [0] * len(moving_scores)
+
     weights = [0.0] * len(moving_scores)
     current_percentage = top_percentage
 
-    # Distribute weights based on ranking
+    # Distribute weights based on ranking (only to non-excluded UIDs)
     for i, (idx, _) in enumerate(sorted_pairs):
         if i == 0:
             allocated = total_weight * top_percentage
@@ -155,7 +221,7 @@ def distribute_weights_by_exponential_decay(moving_scores, total_weight=DEFAULT_
     weights = ((exp_dec / exp_dec.sum()) * total_weight).tolist()
     return weights
 
-def convert_scores_to_weights(moving_scores, use_ranking=True):
+def convert_scores_to_weights(moving_scores, use_ranking=True, exclude_uids=None):
     """
     Convert moving scores to normalized weights using exponential decay or ranking-based distribution.
 
@@ -163,34 +229,74 @@ def convert_scores_to_weights(moving_scores, use_ranking=True):
         moving_scores: List of calculated scores for each miner
         use_ranking: If True, use ranking-based distribution (top miner gets RANKING_EMISSION_TOP_PERC, second 25%, etc.)
                      If False, use exponential decay
+        exclude_uids: Set of UIDs to exclude from weight distribution (e.g., validators)
 
     Returns:
         List of normalized weights summing to DEFAULT_TOTAL_WEIGHT
     """
     if use_ranking:
-        return distribute_weights_by_ranking(moving_scores)
+        return distribute_weights_by_ranking(moving_scores, exclude_uids=exclude_uids)
     else:
         return distribute_weights_by_exponential_decay(moving_scores)
 
 
-def move_miner_weights(moving_scores, metagraph, my_uid):
+def move_miner_weights(moving_scores, metagraph, my_uid, subtensor, netuid):
     """
     Convert moving scores to normalized weights with exponential decay and optional emission control burning.
+    Validators and burn miner are excluded from weight distribution.
 
     Args:
         moving_scores: List of calculated scores for each miner
         metagraph: Bittensor metagraph object
         my_uid: Validator UID for logging purposes
+        subtensor: Bittensor subtensor object
+        netuid: Network UID
 
     Returns:
         List of processed weights ready to be set on chain
     """
     bt.logging.info(f"DAEMON | {my_uid} | Moving scores: {moving_scores}")
-    weights = convert_scores_to_weights(moving_scores, use_ranking=USE_RANKING_EMISSION_CONTROL)
+
+    # Identify validators to exclude
+    validator_uids = get_validator_uids(metagraph, subtensor, netuid)
+
+    # Identify burn miner to exclude from initial distribution
+    burn_miner_uid = None
+    if ENABLE_EMISSION_CONTROL:
+        # Create dummy weights array for burn miner identification
+        dummy_weights = [1.0] * len(moving_scores)  # All equal weights for identification
+        burn_miner_uid = find_burn_miner(dummy_weights, metagraph)
+        if burn_miner_uid is not None:
+            bt.logging.info(f"DAEMON | {my_uid} | Burn miner UID {burn_miner_uid} will get {EMISSION_CONTROL_PERC*100}% emission control weight only")
+
+    # Combine exclusion sets
+    exclude_uids = validator_uids.copy()
+    if burn_miner_uid is not None:
+        exclude_uids.add(burn_miner_uid)
+
+    bt.logging.info(f"DAEMON | {my_uid} | Excluding {len(exclude_uids)} UIDs from weight distribution: {sorted(exclude_uids)}")
+
+    weights = convert_scores_to_weights(moving_scores, use_ranking=USE_RANKING_EMISSION_CONTROL, exclude_uids=exclude_uids)
+
+    # Validate weights sum before emission control
+    weights_sum = sum(weights)
+    if abs(weights_sum - DEFAULT_TOTAL_WEIGHT) > 1.0:
+        bt.logging.warning(
+            f"DAEMON | {my_uid} | Weights sum mismatch before burn: {weights_sum} vs expected {DEFAULT_TOTAL_WEIGHT} "
+            f"(diff: {weights_sum - DEFAULT_TOTAL_WEIGHT})"
+        )
 
     # Apply emission control burning if enabled
     if ENABLE_EMISSION_CONTROL:
-        weights_burned = burn_weights(weights, metagraph).tolist()
+        weights_burned = burn_weights(weights, metagraph, exclude_uids=validator_uids, subtensor=subtensor, netuid=netuid).tolist()
+
+        # Validate weights sum after emission control
+        burned_sum = sum(weights_burned)
+        if abs(burned_sum - weights_sum) > 1.0:
+            bt.logging.warning(
+                f"DAEMON | {my_uid} | Weights sum mismatch after burn: {burned_sum} vs expected {weights_sum} "
+                f"(diff: {burned_sum - weights_sum})"
+            )
     else:
         weights_burned = weights
 
@@ -424,6 +530,66 @@ def generate_unique_id(validator_uid: int) -> str:
     return f"{timestamp}{random_suffix}{str(validator_uid).zfill(3)}"
 
 
+def save_weights_tracking(moving_scores, weights_burned, metagraph, my_uid, incentives=None, tracking_dir="weights_tracking"):
+    """
+    Save moving scores and weights burned calculations to a JSON file for tracking.
+    Creates a new file with datetime in the filename for each tracking entry.
+
+    Args:
+        moving_scores: List of calculated moving scores for each miner
+        weights_burned: List of final weights after burning/emission control
+        metagraph: Bittensor metagraph object
+        my_uid: Validator UID
+        incentives: Optional list of incentives for each miner
+        tracking_dir: Directory to save tracking files
+    """
+    try:
+        # Create tracking directory if it doesn't exist
+        os.makedirs(tracking_dir, exist_ok=True)
+
+        # Get current block number if available
+        try:
+            block_number = metagraph.block.item() if hasattr(metagraph.block, 'item') else int(metagraph.block)
+        except:
+            block_number = -1
+
+        # Generate filename with datetime
+        timestamp = datetime.utcnow()
+        filename = f"weights_tracking_{timestamp.strftime('%Y%m%d_%H%M%S')}_{my_uid}_{block_number}.json"
+        tracking_file = os.path.join(tracking_dir, filename)
+
+        # Create tracking entry
+        tracking_entry = {
+            "timestamp": timestamp.isoformat(),
+            "validator_uid": my_uid,
+            "block_number": block_number,
+            "total_miners": len(moving_scores),
+            "miners": []
+        }
+
+        # Add data for each miner
+        for uid in range(len(moving_scores)):
+            miner_data = {
+                "uid": int(uid),
+                "hotkey": metagraph.hotkeys[uid] if uid < len(metagraph.hotkeys) else "unknown",
+                "moving_score": float(moving_scores[uid]) if uid < len(moving_scores) else 0.0,
+                "weight_burned": float(weights_burned[uid]) if uid < len(weights_burned) else 0.0
+            }
+            # Add incentive if available
+            if incentives is not None and uid < len(incentives):
+                miner_data["incentive"] = float(incentives[uid])
+            tracking_entry["miners"].append(miner_data)
+
+        # Save to file (each file contains a single entry)
+        with open(tracking_file, 'w') as f:
+            json.dump(tracking_entry, f, indent=2)
+
+        bt.logging.info(f"DAEMON | {my_uid} | Saved weights tracking to {tracking_file}")
+
+    except Exception as e:
+        bt.logging.error(f"DAEMON | {my_uid} | Error saving weights tracking: {e}")
+
+
 def main():
     config = get_config()
     wallet, subtensor, metagraph = setup_bittensor_objects(config)
@@ -499,7 +665,7 @@ def main():
                     # Don't update weights if  all moving scores are 0 otherwise it might rate the weights equally.
                     continue
 
-                weights_burned = move_miner_weights(moving_scores, metagraph, my_uid)
+                weights_burned = move_miner_weights(moving_scores, metagraph, my_uid, subtensor, config.netuid)
 
                 subtensor.set_weights(
                     netuid=config.netuid,
@@ -513,6 +679,10 @@ def main():
                     neuron.incentive
                     for neuron in subtensor.neurons(netuid=config.netuid)
                 ]
+
+                # Save tracking data for moving scores, weights burned, and incentives
+                if ENABLE_WEIGHTS_TRACKING:
+                    save_weights_tracking(moving_scores, weights_burned, metagraph, my_uid, incentives)
 
                 bt.logging.info(f"DAEMON | {my_uid} | Preparing to send json data")
 
