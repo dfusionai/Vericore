@@ -90,6 +90,13 @@ async def main_all_urls():
 
 # Entry point
 if __name__ == "__main__":
+    # Initialize bittensor logging to see logs in console
+    # Simple initialization - logs will go to console
+    import tempfile
+    logging_dir = tempfile.mkdtemp(prefix='vericore_test_')
+    bt.logging(config=None, logging_dir=logging_dir)
+    bt.logging.info("Test logging initialized")
+    
     parser = argparse.ArgumentParser(description="Run Snippet Fetcher for url.")
     parser.add_argument(
         "--url",
@@ -107,7 +114,17 @@ if __name__ == "__main__":
         action="store_true",
         help="List all URLs in TEST_URLS array"
     )
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="Enable debug logging"
+    )
     args = parser.parse_args()
+    
+    # Set debug level if requested
+    if args.debug:
+        bt.logging.set_debug(True)
+        bt.logging.info("Debug logging enabled")
 
     if args.list:
         print("Available test URLs:")
