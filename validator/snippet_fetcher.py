@@ -506,52 +506,8 @@ class SnippetFetcher:
                 bt.logging.error(f"{request_id} | {miner_uid} | {url} | Error occurred | Returning empty html : {response}")
                 return ""
 
-            # Log response headers to debug compression/encoding issues
-            content_encoding = response.headers.get("content-encoding", "none")
-            content_type = response.headers.get("content-type", "none")
-            bt.logging.info(
-                f"{request_id} | {miner_uid} | {url} | "
-                f"Response headers - Content-Encoding: {content_encoding}, Content-Type: {content_type}"
-            )
-
-            # Ensure we're getting text, not binary
-            # httpx should auto-decompress, but let's verify
-            try:
-                html_content = response.text
-                
-                # Check if response looks like binary/compressed data
-                if len(html_content) > 0:
-                    # Check first few bytes to see if it's binary
-                    first_bytes = html_content[:100]
-                    # If it contains a lot of non-printable characters, it might be binary
-                    non_printable = sum(1 for c in first_bytes if ord(c) < 32 and c not in '\n\r\t\f')
-                    if len(first_bytes) > 0 and (non_printable / len(first_bytes)) > 0.3:
-                        bt.logging.error(
-                            f"{request_id} | {miner_uid} | {url} | "
-                            f"Response appears to be binary/compressed. "
-                            f"Content-Encoding: {content_encoding}, "
-                            f"Non-printable ratio: {non_printable/len(first_bytes):.2%}. "
-                            f"First 50 bytes (repr): {repr(first_bytes[:50])}"
-                        )
-                        # Try to get raw content and manually decode if needed
-                        try:
-                            raw_content = response.content
-                            # Try UTF-8 first
-                            html_content = raw_content.decode('utf-8', errors='replace')
-                            bt.logging.warning(f"{request_id} | {miner_uid} | {url} | Manually decoded response as UTF-8")
-                        except Exception as decode_error:
-                            bt.logging.error(f"{request_id} | {miner_uid} | {url} | Failed to decode response: {decode_error}")
-                            return ""
-                
-            except Exception as e:
-                bt.logging.error(
-                    f"{request_id} | {miner_uid} | {url} | "
-                    f"Failed to get response text: {e}"
-                )
-                return ""
-
             cleaned_html: str = await self.clean_html(
-                request_id, miner_uid, url, html_content
+                request_id, miner_uid, url, response.text
             )
 
             duration = time.perf_counter() - start
