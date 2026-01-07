@@ -583,17 +583,16 @@ class APIQueryHandler:
         miner_cache_length = len(self.miner_cache)
         new_miner_cache = list(self.miner_cache)
         for index, neuron in enumerate(neurons):
-            if index < miner_cache_length :
+            if index < miner_cache_length:
                 miner_cache = new_miner_cache[index]
-                if miner_cache.miner_hotkey != neuron.hotkey :
-                    bt.logging.info(f"{self.my_uid} | New Miner found. Resetting miner selection for uid: {index} with registered ip-address {neuron.axon_info.ip}")
+                if miner_cache.miner_hotkey != neuron.hotkey:
+                    bt.logging.info(f"{self.my_uid} | New Miner found. Resetting miner selection for uid: {index}")
                     miner_cache.miner_hotkey = neuron.hotkey
-                    miner_cache.neuron_info = neuron
                     miner_cache.scores = 0
                     miner_cache.request_count = 0
-                elif miner_cache.neuron_info.axon_info.ip != neuron.axon_info.ip:
-                    bt.logging.info(f"{self.my_uid} | New neuron found for uid: {index}")
-                    miner_cache.neuron_info = neuron
+
+                # Always update neuron_info with fresh chain data
+                miner_cache.neuron_info = neuron
             else:
                 bt.logging.info(f"{self.my_uid} | Creating new miner selection for uid: {index}")
                 miner_selection = MinerSelection(
