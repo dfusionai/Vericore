@@ -52,7 +52,8 @@ class SnippetValidator:
                 "source_credibility": 0.0,
                 "narrative_momentum": 0.0,
                 "risk_reward_sentiment": 0.0,
-                "catalyst_detection": 0.0
+                "catalyst_detection": 0.0,
+                "political_leaning": 0.0
             }
 
         return {
