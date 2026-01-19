@@ -61,7 +61,8 @@ class SnippetValidator:
             "source_credibility": float(assessment_result.get("source_credibility", 0.0)),
             "narrative_momentum": float(assessment_result.get("narrative_momentum", 0.0)),
             "risk_reward_sentiment": float(assessment_result.get("risk_reward_sentiment", 0.0)),
-            "catalyst_detection": float(assessment_result.get("catalyst_detection", 0.0))
+            "catalyst_detection": float(assessment_result.get("catalyst_detection", 0.0)),
+            "political_leaning": float(assessment_result.get("political_leaning", 0.0))
         }
 
     def _extract_domain(self, url: str) -> str:
@@ -701,6 +702,7 @@ class SnippetValidator:
                 narrative_momentum=signals["narrative_momentum"],
                 risk_reward_sentiment=signals["risk_reward_sentiment"],
                 catalyst_detection=signals["catalyst_detection"],
+                political_leaning=signals["political_leaning"],
                 verify_miner_time_taken_secs=end_time - start_time,
                 fetch_page_time_taken_secs=fetch_page_time_taken_secs,
                 assess_statement_time_taken_secs=assess_statement_time_taken_secs

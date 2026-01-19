@@ -60,6 +60,7 @@ class VericoreStatementResponse():
   narrative_momentum: float = 0.0
   risk_reward_sentiment: float = 0.0
   catalyst_detection: float = 0.0
+  political_leaning: float = 0.0
 
 @dataclass
 class VericoreMinerStatementResponse():

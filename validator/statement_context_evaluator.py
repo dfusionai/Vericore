@@ -51,9 +51,10 @@ You are given the output of a Natural Language Inference (NLI) model to help you
         4. **Narrative Momentum**: Assess whether the excerpt contributes to building a compelling narrative or story around the statement. Values: 0.0 (static/no momentum) to 1.0 (high momentum/engaging narrative).
         5. **Risk-Reward Sentiment**: Evaluate the excerpt's perspective on potential risks vs rewards related to the statement. Values: -1.0 (risk-focused/cautionary) to 1.0 (reward-focused/optimistic), 0.0 (balanced).
         6. **Catalyst Detection**: Determine if the excerpt identifies or discusses catalysts, triggers, or key events that could cause change related to the statement. Values: 0.0 (no catalyst mentioned) to 1.0 (clear catalyst identified).
+        7. **Political Leaning**: Assess the political orientation of the excerpt's perspective. Values: -1.0 (strongly left-leaning/liberal) to 1.0 (strongly right-leaning/conservative), 0.0 (neutral/centrist or non-political).
 
         Return the reason for your answer as well as the result: Return the reason for your score.
-        {{ "reason": "", "snippet_status": "SUPPORT", "is_search_url": false, "score": {{ "contradiction": 0.0, "entailment": 0.0, "neutral": 0.0 }}, "sentiment": 0.0, "conviction": 0.0, "source_credibility": 0.0, "narrative_momentum": 0.0, "risk_reward_sentiment": 0.0, "catalyst_detection": 0.0 }}
+        {{ "reason": "", "snippet_status": "SUPPORT", "is_search_url": false, "score": {{ "contradiction": 0.0, "entailment": 0.0, "neutral": 0.0 }}, "sentiment": 0.0, "conviction": 0.0, "source_credibility": 0.0, "narrative_momentum": 0.0, "risk_reward_sentiment": 0.0, "catalyst_detection": 0.0, "political_leaning": 0.0 }}
 
 - snippet_status: One of "SUPPORT", "CONTRADICT", or "UNRELATED", or "FAKE" .
 - is_search_url: true if the URL is a search page and is similar to the statement; otherwise false.
@@ -70,6 +71,7 @@ Signal Definitions:
 - narrative_momentum: Ability to build an engaging story or narrative around the statement. High momentum creates interest and forward movement in the narrative.
 - risk_reward_sentiment: Focus on risks (negative) vs rewards/opportunities (positive). Risk-focused content emphasizes dangers, costs, or downsides. Reward-focused content emphasizes benefits, opportunities, or upsides.
 - catalyst_detection: Identification of triggers, events, or factors that could cause change or action related to the statement. Catalysts are specific, actionable events or conditions.
+- political_leaning: Political orientation and bias of the content. Negative values indicate left-leaning/liberal perspectives, positive values indicate right-leaning/conservative perspectives. Consider ideological framing, policy preferences, and political rhetoric used.
 
 Do not include explanations. Only return the JSON object.
 """
