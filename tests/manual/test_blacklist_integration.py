@@ -52,61 +52,62 @@ def create_real_synapse(hotkey, metagraph=None):
     synapse = VericoreSynapse(statement="test statement")
 
     # The dendrite represents the requester (validator/miner making the request)
-    # We need to create a proper TerminalInfo object
-    # If we have the metagraph, try to get the actual axon_info
-    if metagraph and hotkey in metagraph.hotkeys:
-        try:
-            neuron_uid = metagraph.hotkeys.index(hotkey)
-            neuron = metagraph.neurons[neuron_uid]
+    # We need to create a proper TerminalInfo object with the CORRECT hotkey
+    # NOTE: We cannot use neuron.axon_info directly because axon_info.hotkey
+    # may not match the neuron's hotkey in metagraph.hotkeys[uid]
+
+    # Find any neuron with axon_info to use as a template
+    template_axon = None
+    if metagraph and len(metagraph.neurons) > 0:
+        for neuron in metagraph.neurons:
             if neuron.axon_info:
-                # Use the actual axon_info from the neuron (this is a TerminalInfo)
-                synapse.dendrite = neuron.axon_info
-                return synapse
-        except (ValueError, IndexError):
-            pass
+                template_axon = neuron.axon_info
+                break
 
-    # Fallback: Create a TerminalInfo using bt.terminal
-    # We need to provide all required fields for TerminalInfo
-    try:
-        # Create a terminal info with the hotkey
-        # bt.terminal creates a TerminalInfo object
-        terminal = bt.terminal(
-            version=bt.__version_as_int__,
-            ip="0.0.0.0",  # Dummy IP since we only need hotkey for testing
-            port=0,  # Dummy port
-            ip_type=4,
-            hotkey=hotkey,
-            coldkey="",  # Not needed for testing
-        )
-        synapse.dendrite = terminal
-    except Exception as e:
-        # If bt.terminal doesn't work, try creating TerminalInfo directly
+    if template_axon:
         try:
-            from bittensor.utils.registration import create_terminus
-            # Create using the utility function
-            terminal = create_terminus(
-                netuid=0,  # Dummy netuid
-                wallet=None,  # We don't have a wallet for this
-            )
-            # Update the hotkey
-            terminal.hotkey = hotkey
-            synapse.dendrite = terminal
-        except Exception:
-            # Last resort: create using TerminalInfo class directly
-            try:
-                from bittensor.utils.registration import TerminalInfo
-                terminal = TerminalInfo(
-                    version=bt.__version_as_int__,
-                    ip="0.0.0.0",
-                    port=0,
-                    ip_type=4,
-                    hotkey=hotkey,
-                    coldkey="",
-                )
-                synapse.dendrite = terminal
-            except Exception as e2:
-                raise Exception(f"Failed to create TerminalInfo: {e}, {e2}")
+            # Create a new TerminalInfo with the correct hotkey
+            # Use model_dump to get dict, set correct hotkey, then model_validate
+            if hasattr(template_axon, 'model_dump'):
+                axon_dict = template_axon.model_dump()
+            else:
+                axon_dict = dict(template_axon.__dict__)
 
+            axon_dict['hotkey'] = hotkey
+
+            # Use model_validate to create new TerminalInfo
+            if hasattr(template_axon, 'model_validate'):
+                terminal = template_axon.__class__.model_validate(axon_dict)
+            else:
+                terminal = type(template_axon)(**axon_dict)
+
+            synapse.dendrite = terminal
+            return synapse
+        except Exception as e1:
+            # Try using type() constructor
+            try:
+                terminal_dict = {
+                    'version': getattr(template_axon, 'version', 0),
+                    'ip': getattr(template_axon, 'ip', '0.0.0.0'),
+                    'port': getattr(template_axon, 'port', 0),
+                    'ip_type': getattr(template_axon, 'ip_type', 4),
+                    'hotkey': hotkey,
+                    'coldkey': getattr(template_axon, 'coldkey', ''),
+                }
+                terminal = type(template_axon)(**terminal_dict)
+                synapse.dendrite = terminal
+                return synapse
+            except Exception as e2:
+                # Final fallback: bypass Pydantic validation
+                pass
+
+    # Fallback: Create a minimal object with just the hotkey attribute
+    # and bypass Pydantic validation using object.__setattr__
+    class MinimalTerminal:
+        def __init__(self, hotkey):
+            self.hotkey = hotkey
+
+    object.__setattr__(synapse, 'dendrite', MinimalTerminal(hotkey))
     return synapse
 
 
@@ -163,6 +164,11 @@ def test_blacklist_with_real_network(config):
 
         metagraph = subtensor.metagraph(config.netuid)
         print(f"✓ Metagraph loaded: {len(metagraph.neurons)} neurons")
+
+        # Sync metagraph to ensure it's up-to-date
+        print("Syncing metagraph to ensure latest state...")
+        metagraph.sync()
+        print(f"✓ Metagraph synced: {len(metagraph.neurons)} neurons")
         print()
 
         # Create miner instance (partial initialization for testing)
@@ -256,6 +262,18 @@ def test_blacklist_with_real_network(config):
                 synapse = create_real_synapse(miner_node['hotkey'], metagraph)
 
                 try:
+                    # Debug: Check what the synapse has
+                    print(f"  DEBUG: Synapse dendrite hotkey: {synapse.dendrite.hotkey}")
+                    print(f"  DEBUG: Expected hotkey: {miner_node['hotkey']}")
+                    print(f"  DEBUG: Hotkeys match: {synapse.dendrite.hotkey == miner_node['hotkey']}")
+                    print(f"  DEBUG: Hotkey in metagraph: {synapse.dendrite.hotkey in miner.metagraph.hotkeys}")
+                    if synapse.dendrite.hotkey in miner.metagraph.hotkeys:
+                        neuron_uid = miner.metagraph.hotkeys.index(synapse.dendrite.hotkey)
+                        neuron = miner.metagraph.neurons[neuron_uid]
+                        print(f"  DEBUG: Found neuron UID: {neuron_uid}")
+                        print(f"  DEBUG: Neuron validator_permit: {neuron.validator_permit}")
+                        print(f"  DEBUG: Expected validator_permit: {miner_node['validator_permit']}")
+
                     should_blacklist, reason = miner.blacklist_fn(synapse)
 
                     if should_blacklist:
@@ -303,6 +321,12 @@ def test_blacklist_with_real_network(config):
         synapse = create_real_synapse(unknown_hotkey, metagraph)
 
         try:
+            # Debug: Check what the synapse has
+            print(f"  DEBUG: Synapse dendrite hotkey: {synapse.dendrite.hotkey}")
+            print(f"  DEBUG: Expected hotkey: {unknown_hotkey}")
+            print(f"  DEBUG: Hotkeys match: {synapse.dendrite.hotkey == unknown_hotkey}")
+            print(f"  DEBUG: Hotkey in metagraph: {synapse.dendrite.hotkey in miner.metagraph.hotkeys}")
+
             should_blacklist, reason = miner.blacklist_fn(synapse)
 
             if should_blacklist:
