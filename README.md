@@ -8,6 +8,7 @@
 - [Setup Instructions](#setup-instructions)
   - [Setting up a validator or miner](#setting-up-a-validator-or-miner)
   - [Register Wallets](#register-wallets)
+- [Scoring Mechanics](#scoring-mechanics)
 - [Monitoring and Logging](#monitoring-and-logging)
 - [Running a blockchain locally](#running-a-blockchain-locally)
 - [Notes and Considerations](#notes-and-considerations)
@@ -91,6 +92,20 @@ Register both the miner and validator on the Bittensor network.
   ```
 
 > **Note**: If you're not connecting to the Mainnet, add `ws://127.0.0.1:9944` or specify the name of the network you wish to connect to.
+
+---
+
+## Scoring Mechanics
+
+For detailed information on how miners are scored and ranked in Subnet 70, see the [Scoring Mechanics Documentation](documents/scoring_mechanics_subnet_70.md).
+
+This document covers:
+- Individual snippet scoring
+- Validation penalties and bonuses
+- Moving average system (EWMA)
+- Miner ranking for weight distribution
+- Emission control
+- Advanced AI assessment signals
 
 ---
 
