@@ -213,6 +213,10 @@ def test_blacklist_with_real_network(config):
             synapse = create_real_synapse(validator['hotkey'], metagraph)
 
             try:
+                # Verify synapse is created correctly
+                if synapse.dendrite.hotkey != validator['hotkey']:
+                    print(f"  ⚠ WARNING: Synapse hotkey mismatch! Expected: {validator['hotkey']}, Got: {synapse.dendrite.hotkey}")
+
                 should_blacklist, reason = miner.blacklist_fn(synapse)
 
                 if not should_blacklist:
@@ -263,6 +267,7 @@ def test_blacklist_with_real_network(config):
 
                 try:
                     # Debug: Check what the synapse has
+                    print(f"  DEBUG: Synapse dendrite type: {type(synapse.dendrite)}")
                     print(f"  DEBUG: Synapse dendrite hotkey: {synapse.dendrite.hotkey}")
                     print(f"  DEBUG: Expected hotkey: {miner_node['hotkey']}")
                     print(f"  DEBUG: Hotkeys match: {synapse.dendrite.hotkey == miner_node['hotkey']}")
@@ -271,10 +276,13 @@ def test_blacklist_with_real_network(config):
                         neuron_uid = miner.metagraph.hotkeys.index(synapse.dendrite.hotkey)
                         neuron = miner.metagraph.neurons[neuron_uid]
                         print(f"  DEBUG: Found neuron UID: {neuron_uid}")
+                        print(f"  DEBUG: Neuron hotkey: {neuron.hotkey}")
                         print(f"  DEBUG: Neuron validator_permit: {neuron.validator_permit}")
                         print(f"  DEBUG: Expected validator_permit: {miner_node['validator_permit']}")
+                        print(f"  DEBUG: Neuron hotkey matches synapse: {neuron.hotkey == synapse.dendrite.hotkey}")
 
                     should_blacklist, reason = miner.blacklist_fn(synapse)
+                    print(f"  DEBUG: blacklist_fn returned: should_blacklist={should_blacklist}, reason={reason}")
 
                     if should_blacklist:
                         print(f"  ✓ PASSED - Miner correctly blacklisted")
