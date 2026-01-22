@@ -92,11 +92,37 @@ class Miner:
             bt.logging.info(f"Miner on uid: {self.my_subnet_uid}")
 
     def blacklist_fn(self, synapse: VericoreSynapse) -> Tuple[bool, str]:
+        # First check if hotkey is in metagraph
         if synapse.dendrite.hotkey not in self.metagraph.hotkeys:
             bt.logging.trace(f"Blacklisting unrecognized hotkey {synapse.dendrite.hotkey}")
             return True, None
-        bt.logging.trace(f"Not blacklisting recognized hotkey {synapse.dendrite.hotkey}")
-        return False, None
+
+        # Get the neuron info to check validator_permit
+        try:
+            neuron_uid = self.metagraph.hotkeys.index(synapse.dendrite.hotkey)
+            neuron = self.metagraph.neurons[neuron_uid]
+
+            # Only accept requests from validators (not miners)
+            # This prevents attackers from registering as miners and spoofing validator requests
+            if not neuron.validator_permit:
+                bt.logging.warning(
+                    f"Blacklisting non-validator hotkey {synapse.dendrite.hotkey} (uid: {neuron_uid})"
+                )
+                return True, None
+
+            # Note: The metagraph is synced periodically in the main loop (every 60 steps)
+            # to ensure validator_permit status is up-to-date. For additional security,
+            # you can also whitelist validator IPs at the network/firewall level.
+
+            bt.logging.trace(
+                f"Accepting request from validator hotkey {synapse.dendrite.hotkey} (uid: {neuron_uid})"
+            )
+            return False, None
+        except (ValueError, IndexError) as e:
+            bt.logging.error(
+                f"Error validating hotkey {synapse.dendrite.hotkey}: {e}. Blacklisting for safety."
+            )
+            return True, None
 
     def veridex_forward(self, synapse: VericoreSynapse) -> VericoreSynapse:
         """
