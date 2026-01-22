@@ -4,14 +4,33 @@ This test uses REAL Bittensor objects - no mocking.
 It connects to the actual network and tests with real wallets and metagraph.
 
 Usage:
+    # Basic usage (mainnet, subnet 1)
     python tests/manual/test_blacklist_integration.py --wallet.name mywallet --wallet.hotkey miner_hotkey --netuid 1
 
+    # Mainnet (Finney) - explicit
+    python tests/manual/test_blacklist_integration.py --wallet.name mywallet --wallet.hotkey miner_hotkey --netuid 1 --subtensor.network finney
+
+    # Testnet
+    python tests/manual/test_blacklist_integration.py --wallet.name mywallet --wallet.hotkey miner_hotkey --netuid 1 --subtensor.network test
+
+    # Local/Development
+    python tests/manual/test_blacklist_integration.py --wallet.name mywallet --wallet.hotkey miner_hotkey --netuid 1 --subtensor.network ws://127.0.0.1:9944
+
+Note:
+    - The wallet does NOT need to be registered on the subnet you're testing
+    - The wallet is only used to connect to the network
+    - The test will test with real validators/miners from the network
+    - Your wallet will only be tested if it's registered on that subnet
+
 This test will:
-1. Load a real wallet
+1. Load a real wallet (any wallet, doesn't need to be registered)
 2. Connect to the Bittensor network
-3. Load the real metagraph
+3. Load the real metagraph for the specified subnet
 4. Test the blacklist_fn with real validator hotkeys from the network
-5. Verify validator_permit checks work correctly
+5. Test with real miner hotkeys (should be rejected)
+6. Test with unknown hotkeys (should be rejected)
+7. Optionally test with your own wallet if it's registered
+8. Verify validator_permit checks work correctly
 """
 
 import sys
@@ -26,19 +45,68 @@ from miner.perplexica.miner import Miner
 from shared.veridex_protocol import VericoreSynapse
 
 
-def create_real_synapse(hotkey):
+def create_real_synapse(hotkey, metagraph=None):
     """Create a real synapse object with the given hotkey"""
     # Create a minimal synapse for testing
     # The synapse needs statement as it's required, but we're only testing blacklist_fn
     synapse = VericoreSynapse(statement="test statement")
 
     # The dendrite represents the requester (validator/miner making the request)
-    # We need to set the hotkey of the requester
-    class MockDendrite:
-        def __init__(self, hotkey):
-            self.hotkey = hotkey
+    # We need to create a proper TerminalInfo object
+    # If we have the metagraph, try to get the actual axon_info
+    if metagraph and hotkey in metagraph.hotkeys:
+        try:
+            neuron_uid = metagraph.hotkeys.index(hotkey)
+            neuron = metagraph.neurons[neuron_uid]
+            if neuron.axon_info:
+                # Use the actual axon_info from the neuron (this is a TerminalInfo)
+                synapse.dendrite = neuron.axon_info
+                return synapse
+        except (ValueError, IndexError):
+            pass
 
-    synapse.dendrite = MockDendrite(hotkey)
+    # Fallback: Create a TerminalInfo using bt.terminal
+    # We need to provide all required fields for TerminalInfo
+    try:
+        # Create a terminal info with the hotkey
+        # bt.terminal creates a TerminalInfo object
+        terminal = bt.terminal(
+            version=bt.__version_as_int__,
+            ip="0.0.0.0",  # Dummy IP since we only need hotkey for testing
+            port=0,  # Dummy port
+            ip_type=4,
+            hotkey=hotkey,
+            coldkey="",  # Not needed for testing
+        )
+        synapse.dendrite = terminal
+    except Exception as e:
+        # If bt.terminal doesn't work, try creating TerminalInfo directly
+        try:
+            from bittensor.utils.registration import create_terminus
+            # Create using the utility function
+            terminal = create_terminus(
+                netuid=0,  # Dummy netuid
+                wallet=None,  # We don't have a wallet for this
+            )
+            # Update the hotkey
+            terminal.hotkey = hotkey
+            synapse.dendrite = terminal
+        except Exception:
+            # Last resort: create using TerminalInfo class directly
+            try:
+                from bittensor.utils.registration import TerminalInfo
+                terminal = TerminalInfo(
+                    version=bt.__version_as_int__,
+                    ip="0.0.0.0",
+                    port=0,
+                    ip_type=4,
+                    hotkey=hotkey,
+                    coldkey="",
+                )
+                synapse.dendrite = terminal
+            except Exception as e2:
+                raise Exception(f"Failed to create TerminalInfo: {e}, {e2}")
+
     return synapse
 
 
@@ -136,7 +204,7 @@ def test_blacklist_with_real_network(config):
             print(f"  Hotkey: {validator['hotkey']}")
             print(f"  Validator Permit: {validator['validator_permit']}")
 
-            synapse = create_real_synapse(validator['hotkey'])
+            synapse = create_real_synapse(validator['hotkey'], metagraph)
 
             try:
                 should_blacklist, reason = miner.blacklist_fn(synapse)
@@ -185,7 +253,7 @@ def test_blacklist_with_real_network(config):
                 print(f"  Hotkey: {miner_node['hotkey']}")
                 print(f"  Validator Permit: {miner_node['validator_permit']}")
 
-                synapse = create_real_synapse(miner_node['hotkey'])
+                synapse = create_real_synapse(miner_node['hotkey'], metagraph)
 
                 try:
                     should_blacklist, reason = miner.blacklist_fn(synapse)
@@ -232,7 +300,7 @@ def test_blacklist_with_real_network(config):
         print(f"Test: Unknown Hotkey")
         print(f"  Hotkey: {unknown_hotkey}")
 
-        synapse = create_real_synapse(unknown_hotkey)
+        synapse = create_real_synapse(unknown_hotkey, metagraph)
 
         try:
             should_blacklist, reason = miner.blacklist_fn(synapse)
@@ -264,7 +332,7 @@ def test_blacklist_with_real_network(config):
             print(f"Your UID: {your_uid}")
             print(f"Your Validator Permit: {your_neuron.validator_permit}")
 
-            synapse = create_real_synapse(your_hotkey)
+            synapse = create_real_synapse(your_hotkey, metagraph)
 
             try:
                 should_blacklist, reason = miner.blacklist_fn(synapse)
