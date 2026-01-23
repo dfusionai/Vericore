@@ -4,17 +4,19 @@ import logging
 import requests
 import os
 import json
+import datetime
 import bittensor as bt
 from shared.log_data import LoggerType, JSONFormatter
 
 MAX_LOG_SIZE = 500
+ENABLE_FILE_LOGGING = os.environ.get("ENABLE_FILE_LOGGING", "false").lower() == "true"
 
 proxy_handler = None
 
 def register_proxy_log_handler(logger, logger_type: LoggerType, wallet):
     enable_logging = os.environ.get("ENABLE_PROXY_LOGGING", "true").lower() == "true"
 
-    bt.logging.info(f"Logging enabled:  {enable_logging}")
+    bt.logging.info(f"Logging enabled: {enable_logging} | File logging enabled: {ENABLE_FILE_LOGGING}")
 
     if not enable_logging:
         return
@@ -60,6 +62,16 @@ class ProxyLogHandler(logging.Handler):
                 # , 'type': self.logger_type,
             }
             requests.post(self.proxy_url, json=json.dumps(log_entries), timeout=5, headers=headers)
+            
+            # Write to file only if file logging is enabled
+            if ENABLE_FILE_LOGGING:
+                log_dir = f"logs/{self.logger_type}"
+                os.makedirs(log_dir, exist_ok=True)
+                timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+                file_path = f"{log_dir}/{timestamp}.log"
+                with open(file_path, 'w') as f:
+                    for entry in log_entries:
+                        f.write(json.dumps(entry) + '\n')
         except requests.exceptions.RequestException as e:
             #todo - not sure what to do here - can we miss a few logs
             # Not using bittensor logging here - otherwise we will go into a loop!
