@@ -1,45 +1,34 @@
-import queue
 import argparse
+import threading
 from sentence_transformers import SentenceTransformer, util
 
-MAX_VALIDATOR_THREADS = 5
+MAX_CONCURRENT_CONTEXT_OPS = 5  # Max concurrent context similarity operations
+
 
 class ContextSimilarityValidator:
+    """Singleton validator with batched encoding for better performance."""
 
     def __init__(self):
         self.model = SentenceTransformer('sentence-transformers/all-mpnet-base-v2')
-
-    def get_embeddings(self, text):
-        return self.model.encode(text, convert_to_tensor=True)
+        self.lock = threading.Semaphore(MAX_CONCURRENT_CONTEXT_OPS)
 
     def calculate_similarity_score(self, statement: str, excerpt: str):
-        # Get embeddings and cosine similarity
-        statement_embedding = self.get_embeddings(statement)
-        excerpt_embedding = self.get_embeddings(excerpt)
+        # Batch encode both texts in a single call (much faster than separate calls)
+        with self.lock:
+            embeddings = self.model.encode([statement, excerpt], convert_to_tensor=True, batch_size=2)
+        
+        statement_embedding = embeddings[0:1]
+        excerpt_embedding = embeddings[1:2]
 
         return float(util.pytorch_cos_sim(statement_embedding, excerpt_embedding).item())
 
 
-class ContextSimilarityPool:
-    def __init__(self, size=5):
-        self.pool = queue.Queue(maxsize=size)  # Create a thread-safe queue
-        for _ in range(size):
-            self.pool.put(ContextSimilarityValidator())  # Fill the pool with instances of SimilarityHandler
+# Single shared validator instance (no pool needed with semaphore)
+_validator = ContextSimilarityValidator()
 
-    def get_handler(self):
-        return self.pool.get()  # Get a handler from the pool (blocking if none available)
-
-    def return_handler(self, handler):
-        self.pool.put(handler)  # Return the handler to the pool
-
-pool = ContextSimilarityPool(MAX_VALIDATOR_THREADS)
 
 def calculate_similarity_score(statement: str, excerpt: str):
-    handler = pool.get_handler()
-    try:
-        return handler.calculate_similarity_score(statement, excerpt)
-    finally:
-        pool.return_handler(handler)
+    return _validator.calculate_similarity_score(statement, excerpt)
 
 def main(statement:str, snippet: str):
     result = calculate_similarity_score(statement, snippet)
