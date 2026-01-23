@@ -1,6 +1,7 @@
 import os
 import ast
 import json
+import time
 from openai import AsyncAzureOpenAI
 import bittensor as bt
 from dotenv import load_dotenv
@@ -32,6 +33,7 @@ class OpenAiClientHandler:
 
     async def send_ai_request(self, messages) :
         try:
+            start_time = time.perf_counter()
             bt.logging.info(f"Calling Open AI directly")
 
             response = await self.client.chat.completions.create(
@@ -43,7 +45,8 @@ class OpenAiClientHandler:
 
             ai_chat_text = response.choices[0].message.content.strip()
 
-            bt.logging.info(f"Received response from Open AI")
+            duration = time.perf_counter() - start_time
+            bt.logging.info(f"Received response from Open AI | Duration: {duration:.3f}s")
 
             try:
                 return json.loads(ai_chat_text)
@@ -52,6 +55,8 @@ class OpenAiClientHandler:
                 return None
 
         except Exception as e:
+            duration = time.perf_counter() - start_time
+            bt.logging.warning(f"Open AI request failed | Duration: {duration:.3f}s | Error: {e}")
             try:
                 error_str = str(e)
                 if "Error code: 400 - " in error_str:

@@ -1,5 +1,6 @@
 import httpx
 import json
+import time
 import bittensor as bt
 
 from shared.environment_variables import AI_API_URL
@@ -28,6 +29,7 @@ class OpenAiProxyServerHandler:
         self.wallet = bt.wallet(config=config)
 
     async def send_ai_request(self, messages):
+        start_time = time.perf_counter()
         try:
             bt.logging.info(f"Running AI chat for url: {self.url}")
             # #add signature
@@ -44,6 +46,8 @@ class OpenAiProxyServerHandler:
 
             response = await self.client.post(self.url, json=messages, headers=headers)
             response.raise_for_status()
+            duration = time.perf_counter() - start_time
+            bt.logging.info(f"AI chat response received | Duration: {duration:.3f}s")
             json_text = response.json()
             try:
                 return json.loads(json_text)
@@ -52,6 +56,7 @@ class OpenAiProxyServerHandler:
                 return None
 
         except httpx.HTTPError as e:
-            print(f"HTTP error: {e}")
+            duration = time.perf_counter() - start_time
+            bt.logging.warning(f"AI chat HTTP error | Duration: {duration:.3f}s | Error: {e}")
             return None
 

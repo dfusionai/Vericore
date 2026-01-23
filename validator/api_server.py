@@ -345,6 +345,17 @@ class APIQueryHandler:
 
             vericore_statement_responses = await asyncio.gather(*tasks)
 
+            # Log performance summary for snippet validation
+            snippet_times = [r.verify_miner_time_taken_secs for r in vericore_statement_responses if r.verify_miner_time_taken_secs > 0]
+            if snippet_times:
+                avg_time = sum(snippet_times) / len(snippet_times)
+                max_time = max(snippet_times)
+                slowest_url = next((r.url for r in vericore_statement_responses if r.verify_miner_time_taken_secs == max_time), "unknown")
+                bt.logging.info(
+                    f"{self.my_uid} | {request_id} | {miner_uid} | Snippet validation summary | "
+                    f"Count: {len(snippet_times)} | Avg: {avg_time:.3f}s | Max: {max_time:.3f}s | Slowest: {slowest_url[:50]}"
+                )
+
             for ignored_miner_response in miner_response.synapse.veridex_response[MAX_MINER_RESPONSES:]:
                 vericore_statement_responses.append(
                      VericoreStatementResponse(
@@ -775,8 +786,21 @@ async def veridex_query(request: Request):
     result.timestamp = time.time()
     result.total_elapsed_time = duration
 
+    # Log request-level performance summary
+    miner_count = len(result.results)
+    total_snippets = sum(len(m.vericore_responses) for m in result.results)
+    all_snippet_times = [
+        r.verify_miner_time_taken_secs 
+        for m in result.results 
+        for r in m.vericore_responses 
+        if r.verify_miner_time_taken_secs > 0
+    ]
+    max_snippet_time = max(all_snippet_times) if all_snippet_times else 0
+    avg_snippet_time = sum(all_snippet_times) / len(all_snippet_times) if all_snippet_times else 0
+    
     bt.logging.info(
-        f"{request_id} | Finished processing at {end_time} (Duration: {duration:.4f} seconds) | {datetime.fromtimestamp(result.timestamp)}"
+        f"{request_id} | Request complete | Duration: {duration:.3f}s | Miners: {miner_count} | "
+        f"Snippets: {total_snippets} | SnippetAvg: {avg_snippet_time:.3f}s | SnippetMax: {max_snippet_time:.3f}s"
     )
 
     handler.write_result_file(request_id, result)
