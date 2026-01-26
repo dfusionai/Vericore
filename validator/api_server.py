@@ -414,6 +414,14 @@ class APIQueryHandler:
 
             bt.logging.info(f"{self.my_uid} | {request_id} | {miner_uid} | Calculated Final Score: {final_score}")
 
+            # Calculate miner-level performance stats
+            fetch_times = [r.fetch_page_time_taken_secs for r in vericore_statement_responses if r.fetch_page_time_taken_secs > 0]
+            ai_times = [r.assess_statement_time_taken_secs for r in vericore_statement_responses if r.assess_statement_time_taken_secs > 0]
+            total_fetch = sum(fetch_times)
+            total_ai = sum(ai_times)
+            total_snippet = sum(snippet_times) if snippet_times else 0
+            total_other = total_snippet - total_fetch - total_ai
+
             miner_statement = VericoreMinerStatementResponse(
                 miner_hotkey=miner_hotkey,
                 miner_uid=miner_uid,
@@ -423,6 +431,12 @@ class APIQueryHandler:
                 raw_score=sum_of_snippets,
                 elapsed_time=miner_response.elapse_time,
                 vericore_responses=vericore_statement_responses,
+                total_fetch_time_secs=total_fetch,
+                total_ai_time_secs=total_ai,
+                total_other_time_secs=total_other,
+                avg_snippet_time_secs=sum(snippet_times) / len(snippet_times) if snippet_times else 0,
+                max_snippet_time_secs=max(snippet_times) if snippet_times else 0,
+                snippet_count=len(snippet_times),
             )
             return miner_statement
         except Exception as e:
@@ -786,21 +800,26 @@ async def veridex_query(request: Request):
     result.timestamp = time.time()
     result.total_elapsed_time = duration
 
-    # Log request-level performance summary
-    miner_count = len(result.results)
-    total_snippets = sum(len(m.vericore_responses) for m in result.results)
+    # Aggregate performance stats from all miners
+    result.miner_count = len(result.results)
+    result.total_snippet_count = sum(m.snippet_count for m in result.results)
+    result.total_fetch_time_secs = sum(m.total_fetch_time_secs for m in result.results)
+    result.total_ai_time_secs = sum(m.total_ai_time_secs for m in result.results)
+    result.total_other_time_secs = sum(m.total_other_time_secs for m in result.results)
+
     all_snippet_times = [
         r.verify_miner_time_taken_secs 
         for m in result.results 
         for r in m.vericore_responses 
         if r.verify_miner_time_taken_secs > 0
     ]
-    max_snippet_time = max(all_snippet_times) if all_snippet_times else 0
-    avg_snippet_time = sum(all_snippet_times) / len(all_snippet_times) if all_snippet_times else 0
+    result.avg_snippet_time_secs = sum(all_snippet_times) / len(all_snippet_times) if all_snippet_times else 0
+    result.max_snippet_time_secs = max(all_snippet_times) if all_snippet_times else 0
     
+    # Log request-level performance summary
     bt.logging.info(
-        f"{request_id} | Request complete | Duration: {duration:.3f}s | Miners: {miner_count} | "
-        f"Snippets: {total_snippets} | SnippetAvg: {avg_snippet_time:.3f}s | SnippetMax: {max_snippet_time:.3f}s"
+        f"{request_id} | Request complete | Duration: {duration:.3f}s | Miners: {result.miner_count} | "
+        f"Snippets: {result.total_snippet_count} | SnippetAvg: {result.avg_snippet_time_secs:.3f}s | SnippetMax: {result.max_snippet_time_secs:.3f}s"
     )
 
     handler.write_result_file(request_id, result)

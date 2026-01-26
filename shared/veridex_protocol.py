@@ -72,6 +72,13 @@ class VericoreMinerStatementResponse():
   raw_score: float = 0
   final_score: float = 0
   elapsed_time: float = 0
+  # Performance stats (aggregated across all snippets)
+  total_fetch_time_secs: float = 0
+  total_ai_time_secs: float = 0
+  total_other_time_secs: float = 0
+  avg_snippet_time_secs: float = 0
+  max_snippet_time_secs: float = 0
+  snippet_count: int = 0
 
 @dataclass
 class VericoreQueryResponse():
@@ -81,6 +88,14 @@ class VericoreQueryResponse():
   request_id: str
   statement: str
   sources: list
-  timestamp: float =0
+  timestamp: float = 0
   total_elapsed_time: float = 0
   results: typing.List["VericoreMinerStatementResponse"] = field(default_factory=list)
+  # Performance stats (aggregated across all miners/snippets)
+  total_fetch_time_secs: float = 0
+  total_ai_time_secs: float = 0
+  total_other_time_secs: float = 0
+  avg_snippet_time_secs: float = 0
+  max_snippet_time_secs: float = 0
+  total_snippet_count: int = 0
+  miner_count: int = 0
