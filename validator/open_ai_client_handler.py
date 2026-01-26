@@ -32,8 +32,8 @@ class OpenAiClientHandler:
         )
 
     async def send_ai_request(self, messages) :
+        start_time = time.perf_counter()
         try:
-            start_time = time.perf_counter()
             bt.logging.info(f"Calling Open AI directly")
 
             response = await self.client.chat.completions.create(
