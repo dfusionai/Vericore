@@ -65,7 +65,7 @@ class ProxyLogHandler(logging.Handler):
             
             # Write to file only if file logging is enabled
             if ENABLE_FILE_LOGGING:
-                log_dir = f"logs/{self.logger_type}"
+                log_dir = f"logs/{self.logger_type.value}"
                 os.makedirs(log_dir, exist_ok=True)
                 timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
                 file_path = f"{log_dir}/{timestamp}.log"
