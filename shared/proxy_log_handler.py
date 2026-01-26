@@ -49,6 +49,22 @@ class ProxyLogHandler(logging.Handler):
 
 
     def send_log(self, log_entries: []):
+        # Write to file first, independently of proxy request success/failure
+        if ENABLE_FILE_LOGGING:
+            try:
+                log_dir = f"logs/{self.logger_type.value}"
+                os.makedirs(log_dir, exist_ok=True)
+                # Use microsecond precision and append mode to prevent data loss
+                # if send_log is called multiple times within the same time window
+                timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S_%f')
+                file_path = f"{log_dir}/{timestamp}.log"
+                with open(file_path, 'a') as f:
+                    for entry in log_entries:
+                        f.write(json.dumps(entry) + '\n')
+            except (OSError, IOError) as e:
+                # File logging should not disrupt the main logging flow
+                print(f"Failed to write log to file: {e}")
+
         try:
             #add signature
             message = f"{self.wallet.hotkey.ss58_address}.{len(log_entries)}.logger"
@@ -62,22 +78,6 @@ class ProxyLogHandler(logging.Handler):
                 # , 'type': self.logger_type,
             }
             requests.post(self.proxy_url, json=json.dumps(log_entries), timeout=5, headers=headers)
-            
-            # Write to file only if file logging is enabled
-            if ENABLE_FILE_LOGGING:
-                try:
-                    log_dir = f"logs/{self.logger_type.value}"
-                    os.makedirs(log_dir, exist_ok=True)
-                    # Use microsecond precision and append mode to prevent data loss
-                    # if send_log is called multiple times within the same time window
-                    timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S_%f')
-                    file_path = f"{log_dir}/{timestamp}.log"
-                    with open(file_path, 'a') as f:
-                        for entry in log_entries:
-                            f.write(json.dumps(entry) + '\n')
-                except (OSError, IOError) as e:
-                    # File logging should not disrupt the main logging flow
-                    print(f"Failed to write log to file: {e}")
         except requests.exceptions.RequestException as e:
             #todo - not sure what to do here - can we miss a few logs
             # Not using bittensor logging here - otherwise we will go into a loop!
