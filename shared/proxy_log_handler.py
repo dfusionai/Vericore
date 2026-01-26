@@ -61,8 +61,9 @@ class ProxyLogHandler(logging.Handler):
                 with open(file_path, 'a') as f:
                     for entry in log_entries:
                         f.write(json.dumps(entry) + '\n')
-            except (OSError, IOError) as e:
+            except Exception as e:
                 # File logging should not disrupt the main logging flow
+                # Catches I/O errors, JSON serialization errors (TypeError), and any other unexpected exceptions
                 print(f"Failed to write log to file: {e}")
 
         try:
