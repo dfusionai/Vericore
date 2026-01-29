@@ -111,6 +111,18 @@ class Miner:
                 )
                 return True, None
 
+            # Reject validators with no axon_info or not serving (Bittensor SDK: invalid IP e.g. 0.0.0.0)
+            if neuron.axon_info is None:
+                bt.logging.warning(
+                    f"Blacklisting validator {synapse.dendrite.hotkey} (uid: {neuron_uid}): no axon_info"
+                )
+                return True, None
+            if not neuron.axon_info.is_serving:
+                bt.logging.warning(
+                    f"Blacklisting validator {synapse.dendrite.hotkey} (uid: {neuron_uid}): axon not serving (invalid IP)"
+                )
+                return True, None
+
             # Note: The metagraph is synced periodically in the main loop (every 60 steps)
             # to ensure validator_permit status is up-to-date. For additional security,
             # you can also whitelist validator IPs at the network/firewall level.

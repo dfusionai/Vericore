@@ -26,11 +26,12 @@ This test will:
 1. Load a real wallet (any wallet, doesn't need to be registered)
 2. Connect to the Bittensor network
 3. Load the real metagraph for the specified subnet
-4. Test the blacklist_fn with real validator hotkeys from the network
-5. Test with real miner hotkeys (should be rejected)
-6. Test with unknown hotkeys (should be rejected)
-7. Optionally test with your own wallet if it's registered
-8. Verify validator_permit checks work correctly
+4. Test the blacklist_fn with real validator hotkeys (serving only) - should ALLOW
+5. Test with validators that have no axon_info or not is_serving - should REJECT
+6. Test with real miner hotkeys (should be rejected)
+7. Test with unknown hotkeys (should be rejected)
+8. Optionally test with your own wallet if it's registered
+9. Verify validator_permit, axon_info, and is_serving checks work correctly
 """
 
 import sys
@@ -111,16 +112,26 @@ def create_real_synapse(hotkey, metagraph=None):
     return synapse
 
 
-def get_validators_from_metagraph(metagraph, max_validators=10):
-    """Get a list of validators from the metagraph"""
+def get_validators_from_metagraph(metagraph, max_validators=10, serving_only=False):
+    """Get a list of validators from the metagraph.
+
+    Args:
+        metagraph: Bittensor metagraph
+        max_validators: Max number to return
+        serving_only: If True, only return validators with axon_info and is_serving (valid IP)
+    """
     validators = []
     for i, neuron in enumerate(metagraph.neurons):
         if neuron.validator_permit:
+            if serving_only:
+                if neuron.axon_info is None or not getattr(neuron.axon_info, "is_serving", False):
+                    continue
             validators.append({
                 'uid': i,
                 'hotkey': neuron.hotkey,
                 'validator_permit': neuron.validator_permit,
-                'axon_info': neuron.axon_info
+                'axon_info': neuron.axon_info,
+                'is_serving': getattr(neuron.axon_info, "is_serving", False) if neuron.axon_info else False,
             })
             if len(validators) >= max_validators:
                 break
@@ -178,14 +189,21 @@ def test_blacklist_with_real_network(config):
 
         # Get real validators and miners from the network
         print("Fetching validators and miners from network...")
-        validators = get_validators_from_metagraph(metagraph, max_validators=5)
+        validators_all = get_validators_from_metagraph(metagraph, max_validators=10, serving_only=False)
+        validators_serving = get_validators_from_metagraph(metagraph, max_validators=5, serving_only=True)
+        validators_not_serving = [
+            v for v in validators_all
+            if v["axon_info"] is None or not v.get("is_serving", False)
+        ][:5]
         miners = get_miners_from_metagraph(metagraph, max_miners=3)
 
-        print(f"✓ Found {len(validators)} validators")
+        print(f"✓ Found {len(validators_all)} validators total")
+        print(f"✓ Found {len(validators_serving)} validators with axon serving (valid IP)")
+        print(f"✓ Found {len(validators_not_serving)} validators without valid axon (no axon_info or not is_serving)")
         print(f"✓ Found {len(miners)} miners")
         print()
 
-        if len(validators) == 0:
+        if len(validators_all) == 0:
             print("⚠ WARNING: No validators found in metagraph!")
             print("  Cannot test validator permit check.")
             return False
@@ -199,57 +217,101 @@ def test_blacklist_with_real_network(config):
         failed = 0
         results = []
 
-        # Test 1: Test with real validators (should ALLOW)
+        # Test 1: Test with real validators that have valid axon (is_serving) - should ALLOW
         print("=" * 70)
-        print("Test 1: Testing with REAL Validators (should ALLOW)")
+        print("Test 1: Testing with REAL Validators (axon serving, valid IP) - should ALLOW")
         print("=" * 70)
         print()
 
-        for i, validator in enumerate(validators, 1):
-            print(f"Test {i}: Validator UID {validator['uid']}")
-            print(f"  Hotkey: {validator['hotkey']}")
-            print(f"  Validator Permit: {validator['validator_permit']}")
+        if len(validators_serving) == 0:
+            print("⚠ WARNING: No validators with axon serving found. Skipping Test 1.")
+            print("  (Validators with 0.0.0.0 or no axon_info are blacklisted by miner.)")
+        else:
+            for i, validator in enumerate(validators_serving, 1):
+                print(f"Test {i}: Validator UID {validator['uid']}")
+                print(f"  Hotkey: {validator['hotkey']}")
+                print(f"  Validator Permit: {validator['validator_permit']}")
 
-            synapse = create_real_synapse(validator['hotkey'], metagraph)
+                synapse = create_real_synapse(validator['hotkey'], metagraph)
 
-            try:
-                # Verify synapse is created correctly
-                if synapse.dendrite.hotkey != validator['hotkey']:
-                    print(f"  ⚠ WARNING: Synapse hotkey mismatch! Expected: {validator['hotkey']}, Got: {synapse.dendrite.hotkey}")
+                try:
+                    # Verify synapse is created correctly
+                    if synapse.dendrite.hotkey != validator['hotkey']:
+                        print(f"  ⚠ WARNING: Synapse hotkey mismatch! Expected: {validator['hotkey']}, Got: {synapse.dendrite.hotkey}")
 
-                should_blacklist, reason = miner.blacklist_fn(synapse)
+                    should_blacklist, reason = miner.blacklist_fn(synapse)
 
-                if not should_blacklist:
-                    print(f"  ✓ PASSED - Validator allowed (as expected)")
-                    passed += 1
-                    results.append({
-                        'type': 'validator',
-                        'uid': validator['uid'],
-                        'hotkey': validator['hotkey'],
-                        'passed': True
-                    })
-                else:
-                    print(f"  ✗ FAILED - Validator was blacklisted (unexpected!)")
-                    print(f"    Reason: {reason}")
+                    if not should_blacklist:
+                        print(f"  ✓ PASSED - Validator allowed (as expected)")
+                        passed += 1
+                        results.append({
+                            'type': 'validator',
+                            'uid': validator['uid'],
+                            'hotkey': validator['hotkey'],
+                            'passed': True
+                        })
+                    else:
+                        print(f"  ✗ FAILED - Validator was blacklisted (unexpected!)")
+                        print(f"    Reason: {reason}")
+                        failed += 1
+                        results.append({
+                            'type': 'validator',
+                            'uid': validator['uid'],
+                            'hotkey': validator['hotkey'],
+                            'passed': False,
+                            'error': 'Validator incorrectly blacklisted'
+                        })
+                except Exception as e:
+                    print(f"  ✗ ERROR - Exception: {e}")
                     failed += 1
                     results.append({
                         'type': 'validator',
                         'uid': validator['uid'],
                         'hotkey': validator['hotkey'],
                         'passed': False,
-                        'error': 'Validator incorrectly blacklisted'
+                        'error': str(e)
                     })
-            except Exception as e:
-                print(f"  ✗ ERROR - Exception: {e}")
-                failed += 1
-                results.append({
-                    'type': 'validator',
-                    'uid': validator['uid'],
-                    'hotkey': validator['hotkey'],
-                    'passed': False,
-                    'error': str(e)
-                })
+                print()
+
+        # Test 1b: Validators with no axon_info or not is_serving (should REJECT)
+        if len(validators_not_serving) > 0:
+            print("=" * 70)
+            print("Test 1b: Validators without valid axon (no axon_info or not is_serving) - should REJECT")
+            print("=" * 70)
             print()
+
+            for i, validator in enumerate(validators_not_serving, 1):
+                print(f"Test {i}: Validator UID {validator['uid']} (axon not serving)")
+                print(f"  Hotkey: {validator['hotkey']}")
+
+                synapse = create_real_synapse(validator['hotkey'], metagraph)
+
+                try:
+                    should_blacklist, reason = miner.blacklist_fn(synapse)
+
+                    if should_blacklist:
+                        print(f"  ✓ PASSED - Validator correctly blacklisted (invalid axon)")
+                        passed += 1
+                        results.append({
+                            'type': 'validator_not_serving',
+                            'uid': validator['uid'],
+                            'hotkey': validator['hotkey'],
+                            'passed': True
+                        })
+                    else:
+                        print(f"  ✗ FAILED - Validator was allowed (should be blacklisted: no axon_info or not is_serving)")
+                        failed += 1
+                        results.append({
+                            'type': 'validator_not_serving',
+                            'uid': validator['uid'],
+                            'hotkey': validator['hotkey'],
+                            'passed': False,
+                            'error': 'Validator without valid axon incorrectly allowed'
+                        })
+                except Exception as e:
+                    print(f"  ✗ ERROR - Exception: {e}")
+                    failed += 1
+                print()
 
         # Test 2: Test with real miners (should REJECT)
         if len(miners) > 0:
@@ -348,7 +410,7 @@ def test_blacklist_with_real_network(config):
             failed += 1
         print()
 
-        # Test 4: Test with your own wallet (if it's a validator, should allow; if miner, should reject)
+        # Test 4: Test with your own wallet (validator with axon serving: allow; miner or validator not serving: reject)
         print("=" * 70)
         print("Test 4: Testing with Your Wallet")
         print("=" * 70)
@@ -361,21 +423,34 @@ def test_blacklist_with_real_network(config):
         if your_hotkey in metagraph.hotkeys:
             your_uid = metagraph.hotkeys.index(your_hotkey)
             your_neuron = metagraph.neurons[your_uid]
+            your_axon_serving = (
+                your_neuron.axon_info is not None
+                and getattr(your_neuron.axon_info, "is_serving", False)
+            )
             print(f"Your UID: {your_uid}")
             print(f"Your Validator Permit: {your_neuron.validator_permit}")
+            print(f"Your Axon Serving: {your_axon_serving}")
 
             synapse = create_real_synapse(your_hotkey, metagraph)
 
             try:
                 should_blacklist, reason = miner.blacklist_fn(synapse)
 
-                if your_neuron.validator_permit:
-                    # You're a validator, should be allowed
+                if your_neuron.validator_permit and your_axon_serving:
+                    # You're a validator with valid axon, should be allowed
                     if not should_blacklist:
-                        print(f"  ✓ PASSED - Your validator wallet is correctly allowed")
+                        print(f"  ✓ PASSED - Your validator wallet (axon serving) is correctly allowed")
                         passed += 1
                     else:
                         print(f"  ✗ FAILED - Your validator wallet was incorrectly blacklisted")
+                        failed += 1
+                elif your_neuron.validator_permit and not your_axon_serving:
+                    # Validator but no axon / not serving (e.g. 0.0.0.0), should be blacklisted
+                    if should_blacklist:
+                        print(f"  ✓ PASSED - Your validator wallet (axon not serving) is correctly blacklisted")
+                        passed += 1
+                    else:
+                        print(f"  ✗ FAILED - Validator without valid axon was incorrectly allowed")
                         failed += 1
                 else:
                     # You're a miner, should be rejected
@@ -384,7 +459,6 @@ def test_blacklist_with_real_network(config):
                         passed += 1
                     else:
                         print(f"  ✗ FAILED - Your miner wallet was incorrectly allowed")
-                        print(f"    Note: This is expected if you're testing as a miner")
                         failed += 1
             except Exception as e:
                 print(f"  ✗ ERROR - Exception: {e}")
@@ -407,15 +481,22 @@ def test_blacklist_with_real_network(config):
         print("Security Check:")
         print("-" * 70)
         validator_tests = [r for r in results if r.get('type') == 'validator']
+        validator_not_serving_tests = [r for r in results if r.get('type') == 'validator_not_serving']
         miner_tests = [r for r in results if r.get('type') == 'miner']
 
         validator_passed = all(r.get('passed', False) for r in validator_tests)
+        validator_not_serving_blocked = all(r.get('passed', False) for r in validator_not_serving_tests)
         miner_blocked = all(r.get('passed', False) for r in miner_tests)
 
         if validator_passed:
-            print("✓ Validators are correctly allowed")
+            print("✓ Validators (axon serving) are correctly allowed")
         else:
             print("✗ Some validators were incorrectly rejected!")
+
+        if validator_not_serving_tests and validator_not_serving_blocked:
+            print("✓ Validators without valid axon are correctly blocked")
+        elif validator_not_serving_tests and not validator_not_serving_blocked:
+            print("✗ Some validators without valid axon were incorrectly allowed!")
 
         if miner_blocked:
             print("✓ Miners are correctly blocked")
