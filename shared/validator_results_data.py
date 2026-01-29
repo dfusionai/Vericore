@@ -12,6 +12,7 @@ class ValidatorResultsData:
     has_summary_data: bool = False
     vericore_responses: List[dict] = field(default_factory=list)
     calculated_weights: List[float] = field(default_factory=list)
-    incentives: List[float] = field(default_factory=list)
+    incentives: List[float] = field(default_factory=list)  # On-chain incentives (previous epoch / pre-reveal when commit-reveal enabled)
     moving_scores: List[float] = field(default_factory=list)
     validator_uids: List[int] = field(default_factory=list)
+    burn_uid: int = -1  # Emission control UID; dashboard can show this miner first (has most incentives)
