@@ -439,15 +439,26 @@ class SnippetFetcher:
 
         if USE_HTML_PARSER_API:
             async with self.limiter:
-                return await self.send_html_parser_api_request(request_id, miner_uid, endpoint, headers)
+                http_start = time.perf_counter()
+                resp = await self.send_html_parser_api_request(request_id, miner_uid, endpoint, headers)
+                if resp is not None:
+                    resp.http_time_secs = time.perf_counter() - http_start
+                    resp.selenium_time_secs = "NA"
+                return resp
         else:
             # Semaphore limits HTTP requests (fast, ~milliseconds)
             # Selenium fallback happens outside semaphore since it has its own pool limit
+            http_start = time.perf_counter()
             async with self.limiter:
                 bt.logging.info(
                     f"{request_id} | {miner_uid} | {endpoint} | Snippet Fetcher: Rendering page - fetching snippet - passed semaphore"
                 )
                 response = await self.send_get_request(request_id, miner_uid, endpoint, headers, referer=referer)
+            http_time_secs = time.perf_counter() - http_start if response is not None else "NA"
+
+            if response is not None:
+                response.http_time_secs = http_time_secs if isinstance(http_time_secs, (int, float)) else "NA"
+                response.selenium_time_secs = "NA"
 
             # Check if Selenium fallback is needed (outside semaphore context)
             # This allows other HTTP requests to proceed while Selenium runs
@@ -461,14 +472,20 @@ class SnippetFetcher:
                     f"{request_id} | {miner_uid} | {endpoint} | "
                     f"Attempting Selenium fallback for 403 response (outside HTTP semaphore)"
                 )
+                selenium_start = time.perf_counter()
                 selenium_response = await self._fetch_with_selenium(request_id, miner_uid, endpoint)
+                selenium_time_secs = time.perf_counter() - selenium_start if selenium_response is not None else "NA"
+
                 if selenium_response and selenium_response.status_code == 200:
+                    selenium_response.http_time_secs = response.http_time_secs
+                    selenium_response.selenium_time_secs = selenium_time_secs if isinstance(selenium_time_secs, (int, float)) else "NA"
                     return selenium_response
                 else:
                     bt.logging.warning(
                         f"{request_id} | {miner_uid} | {endpoint} | "
                         f"Selenium fallback failed, returning original 403 response"
                     )
+                    response.selenium_time_secs = selenium_time_secs if isinstance(selenium_time_secs, (int, float)) else "NA"
 
             return response
 
@@ -488,12 +505,12 @@ class SnippetFetcher:
 
     async def fetch_entire_page(
         self, request_id: str, miner_uid: int, url: str
-    ) -> str | None:
+    ) -> tuple[str | None, float | str, float | str]:
         """
         Pull the final rendered HTML (post-JS) using http request.
-        Return it as a string.
+        Returns (cleaned_html, http_time_secs, selenium_time_secs).
+        http_time_secs/selenium_time_secs are float seconds or "NA" if not available.
         """
-        # headers = { "User-Agent": "Mozilla/5.0" }  # Mimic a real browser
         bt.logging.info(f"{request_id} | {miner_uid} | {url} | Fetching entire page")
         try:
             start = time.perf_counter()
@@ -504,7 +521,10 @@ class SnippetFetcher:
 
             if response is None or response.status_code != 200:
                 bt.logging.error(f"{request_id} | {miner_uid} | {url} | Error occurred | Returning empty html : {response}")
-                return ""
+                return ("", "NA", "NA")
+
+            http_time_secs = getattr(response, "http_time_secs", "NA")
+            selenium_time_secs = getattr(response, "selenium_time_secs", "NA")
 
             cleaned_html: str = await self.clean_html(
                 request_id, miner_uid, url, response.text
@@ -514,18 +534,19 @@ class SnippetFetcher:
             bt.logging.info(
                 f"{request_id} | {miner_uid} | {url} | Fetched html | {duration:.4f} seconds"
             )
-            return cleaned_html
+            return (cleaned_html, http_time_secs, selenium_time_secs)
         except Exception as e:
             bt.logging.error(
                 f"{request_id} | {miner_uid} | {url} | Failed to fetch html {e}"
             )
-            return ""
+            return ("", "NA", "NA")
 
 snippet_fetcher = SnippetFetcher()
 
 async def fetch_entire_page(
     request_id: str, miner_uid: int, url: str
-) -> str | None:
+) -> tuple[str | None, float | str, float | str]:
+    """Returns (cleaned_html, http_time_secs, selenium_time_secs). Times are float or 'NA'."""
     return await snippet_fetcher.fetch_entire_page(request_id, miner_uid, url)
 
 
