@@ -26,13 +26,13 @@ class TestSnippetValidator(unittest.TestCase):
             "example.com"
         )
         self.assertEqual(
-            self.validator._extract_domain("http://subdomain.example.co.uk/"),
+            self.validator._extract_domain("https://subdomain.example.co.uk/"),
             "example.co.uk"
         )
 
-        # Test IP addresses
+        # Test IP addresses (HTTPS required by validator)
         self.assertEqual(
-            self.validator._extract_domain("http://192.168.1.1/path"),
+            self.validator._extract_domain("https://192.168.1.1/path"),
             "192.168.1.1"
         )
         self.assertEqual(
@@ -69,15 +69,15 @@ class TestSnippetValidator(unittest.TestCase):
         Tests that URLs with different domains produce different domains after extraction.
         """
         test_urls = [
-            "http://advertisermetasupport.com/posts/78228",
-            "http://metacatalog.advertisermetasupport.com/posts/78229",
-            "http://catalog.advertisermetasupport.com/posts/78230",
-            "http://answer.advertisermetasupport.com/posts/78231",
-            "http://knowledge.advertisermetasupport.com/posts/78232",
-            "http://metawiki.advertisermetasupport.com/posts/78233",
-            "http://metawikipedia.advertisermetasupport.com/posts/78234",
-            "http://wiki.advertisermetasupport.com/posts/78235",
-            "http://wikipedia.advertisermetasupport.com/posts/78236"
+            "https://advertisermetasupport.com/posts/78228",
+            "https://metacatalog.advertisermetasupport.com/posts/78229",
+            "https://catalog.advertisermetasupport.com/posts/78230",
+            "https://answer.advertisermetasupport.com/posts/78231",
+            "https://knowledge.advertisermetasupport.com/posts/78232",
+            "https://metawiki.advertisermetasupport.com/posts/78233",
+            "https://metawikipedia.advertisermetasupport.com/posts/78234",
+            "https://wiki.advertisermetasupport.com/posts/78235",
+            "https://wikipedia.advertisermetasupport.com/posts/78236"
         ]
 
         # Extract domains from all URLs
@@ -91,8 +91,8 @@ class TestSnippetValidator(unittest.TestCase):
 
         # Test with mixed domains (should fail)
         mixed_urls = [
-            "http://advertisermetasupport.com/post1",
-            "http://different-domain.com/post2",
+            "https://advertisermetasupport.com/post1",
+            "https://different-domain.com/post2",
         ]
 
         domains = [self.validator._extract_domain(url) for url in mixed_urls]
