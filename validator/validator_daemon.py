@@ -31,70 +31,19 @@ RANKING_EMISSION_TOP_PERC = 0.5
 # Weight distribution constants
 DEFAULT_TOTAL_WEIGHT = 65535.0  # Standard Bittensor weight total
 EXPONENTIAL_DECAY_SCALE = 4.0  # Scaling factor for exponential decay distribution
+BASE_WEIGHT_FRACTION = 0.01  # 1% of total = base pool for all miners
+
+
+def get_banned_hotkeys():
+    """Load BANNED_WALLET_HOTKEYS from environment (comma-separated SS58 addresses)."""
+    raw = os.environ.get("BANNED_WALLET_HOTKEYS", "")
+    return {a.strip() for a in raw.split(",") if a.strip()}
 
 def find_target_uid(metagraph, hotkey):
     for neuron in metagraph.neurons:
         if neuron.hotkey == hotkey:
             emission_control_uid = neuron.uid
             return emission_control_uid
-
-def find_burn_miner(weights, metagraph):
-    """
-    Validate and find the target burn miner UID.
-
-    Args:
-        weights: Array of weights to be processed
-        metagraph: Bittensor metagraph object
-
-    Returns:
-        Target UID if found and valid, None otherwise
-    """
-    target_uid = find_target_uid(metagraph, EMISSION_CONTROL_HOTKEY)
-    if target_uid is None:
-        bt.logging.info(f"target emission control hotkey {EMISSION_CONTROL_HOTKEY} is not found")
-        return None
-
-    # Ensure target_uid is within bounds
-    if target_uid >= len(weights):
-        bt.logging.warning(f"Target UID {target_uid} is out of bounds for weights array of length {len(weights)}")
-        return None
-
-    return target_uid
-
-def burn_weights(weights, metagraph):
-    """
-    Apply emission control by burning weights and redistributing to target UID.
-
-    Args:
-        weights: Array of weights to be processed
-        metagraph: Bittensor metagraph object
-
-    Returns:
-        Processed weights with emission control applied
-    """
-    target_uid = find_burn_miner(weights, metagraph)
-    if target_uid is None:
-        return weights
-
-    total_score = np.sum(weights)
-    new_target_score = EMISSION_CONTROL_PERC * total_score
-    remaining_weight = (1 - EMISSION_CONTROL_PERC) * total_score
-    total_other_scores = total_score - weights[target_uid]
-
-    if total_other_scores == 0:
-        bt.logging.warning("All scores are zero except target UID, cannot scale.")
-        return weights
-
-    new_scores = np.zeros_like(weights, dtype=float)
-    uids = metagraph.uids
-
-    for i, (uid, weight) in enumerate(zip(uids, weights)):
-        if uid == target_uid:
-            new_scores[i] = new_target_score
-        else:
-            new_scores[i] = (weight / total_other_scores) * remaining_weight
-
-    return new_scores
 
 def distribute_weights_by_ranking(moving_scores, total_weight=DEFAULT_TOTAL_WEIGHT, top_percentage=RANKING_EMISSION_TOP_PERC):
     """
@@ -133,7 +82,16 @@ def distribute_weights_by_ranking(moving_scores, total_weight=DEFAULT_TOTAL_WEIG
         top_idx = sorted_pairs[0][0]
         weights[top_idx] += (total_weight - weight_sum)
 
-    return [int(round(w)) for w in weights]
+    # Round to integers; sum(rounded) can be off by one (or more) from total_weight.
+    # Add the shortfall/surplus to the top miner so the returned list sums to exactly total_weight.
+    # Example: two miners, floats [49151.25, 16383.75] (sum 65535). rounded=[49151, 16384], sum=65534.
+    #   diff=1, top gets 49152 -> final sum 65535.
+    rounded = [int(round(w)) for w in weights]
+    diff = int(total_weight) - sum(rounded)
+    if diff != 0:
+        top_idx = sorted_pairs[0][0]
+        rounded[top_idx] += diff
+    return rounded
 
 def distribute_weights_by_exponential_decay(moving_scores, total_weight=DEFAULT_TOTAL_WEIGHT, scale=EXPONENTIAL_DECAY_SCALE):
     """
@@ -173,26 +131,127 @@ def convert_scores_to_weights(moving_scores, use_ranking=True):
         return distribute_weights_by_exponential_decay(moving_scores)
 
 
-def move_miner_weights(moving_scores, metagraph, my_uid):
+def _get_miner_uids(metagraph, banned_hotkeys=None):
     """
-    Convert moving scores to normalized weights with exponential decay and optional emission control burning.
+    Return UIDs that are miners (not validators) and not in the banned hotkeys set.
+    """
+    banned = banned_hotkeys or set()
+    return [
+        n.uid for n in metagraph.neurons
+        if not n.validator_permit and n.hotkey not in banned
+    ]
+
+
+def distribute_weights_burn_base_remainder(
+    moving_scores,
+    metagraph,
+    total_weight=DEFAULT_TOTAL_WEIGHT,
+    burn_perc=EMISSION_CONTROL_PERC,
+    base_fraction=BASE_WEIGHT_FRACTION,
+    banned_hotkeys=None,
+):
+    """
+    Distribute weight: burn first, then base to all miners, then remainder by ranking among miners only.
+    Validators and banned UIDs get 0.
 
     Args:
-        moving_scores: List of calculated scores for each miner
+        moving_scores: List of calculated scores per UID (index = UID)
+        metagraph: Bittensor metagraph
+        total_weight: Total weight to distribute (default 65535)
+        burn_perc: Fraction of total to burn UID (default 0.80)
+        base_fraction: Fraction of total for base pool (default 0.01)
+        banned_hotkeys: Set of hotkey addresses to exclude (get 0 weight)
+
+    Returns:
+        List of weights per UID (integers) summing to total_weight
+    """
+    n_uids = len(moving_scores)
+    weights = [0.0] * n_uids
+
+    burn_uid = find_target_uid(metagraph, EMISSION_CONTROL_HOTKEY)
+    if burn_uid is not None and burn_uid < n_uids:
+        weights[burn_uid] = burn_perc * total_weight
+    remaining_after_burn = total_weight - sum(weights)
+
+    miner_uids = [
+        uid for uid in _get_miner_uids(metagraph, banned_hotkeys)
+        if uid != burn_uid
+    ]
+    n_miners = len(miner_uids)
+
+    if n_miners == 0:
+        # No miners to distribute to: give 100% to burn UID so sum(weights) == total_weight.
+        if burn_uid is not None and burn_uid < n_uids:
+            weights[burn_uid] = total_weight
+        # Example: 5 UIDs, burn_uid=0, UIDs 1-4 validators -> [65535, 0, 0, 0, 0]
+        return [int(round(w)) for w in weights]
+
+    # miner_uids excludes burn_uid (see above), so base and remainder go only to miners.
+    # Cap base pool by available weight so burn + base never exceeds total_weight.
+    base_pool = min(base_fraction * total_weight, remaining_after_burn)
+    base_per_miner = base_pool / n_miners
+    # Each miner receives base weight (equal share of base pool).
+    for uid in miner_uids:
+        if uid < n_uids:
+            weights[uid] += base_per_miner
+
+    remainder = remaining_after_burn - base_pool
+    remainder = max(0.0, remainder)
+
+    # Use validator's moving_scores (not computed weights) to rank miners for remainder.
+    miner_scores = [moving_scores[uid] for uid in miner_uids if uid < n_uids]
+    miner_uids_valid = [uid for uid in miner_uids if uid < n_uids]
+    if miner_uids_valid and remainder > 0:
+        ranking_weights = distribute_weights_by_ranking(
+            miner_scores,
+            total_weight=remainder,
+        )
+        for i, uid in enumerate(miner_uids_valid):
+            if i < len(ranking_weights):
+                # i = index in miner list (for ranking_weights); uid = UID (for weights).
+                weights[uid] += ranking_weights[i]
+
+    weight_sum = sum(weights)
+    if weight_sum > 0:
+        rounded = [int(round(w)) for w in weights]
+        diff = int(total_weight) - sum(rounded)
+        # Apply diff to a miner so burn UID stays exactly burn_perc * total (same as previous burn calculation)
+        if diff != 0 and miner_uids_valid:
+            rounded[miner_uids_valid[0]] += diff
+        elif diff != 0 and burn_uid is not None and burn_uid < n_uids:
+            rounded[burn_uid] += diff
+        return rounded
+    return [int(round(w)) for w in weights]
+
+
+def move_miner_weights(moving_scores, metagraph, my_uid, banned_hotkeys=None):
+    """
+    Distribute weight: burn first, then base to all miners, then remainder by ranking.
+    Validators and banned UIDs get 0.
+
+    Args:
+        moving_scores: List of calculated scores for each miner (index = UID)
         metagraph: Bittensor metagraph object
         my_uid: Validator UID for logging purposes
+        banned_hotkeys: Set of hotkey addresses to exclude (get 0 weight)
 
     Returns:
         List of processed weights ready to be set on chain
     """
     bt.logging.info(f"DAEMON | {my_uid} | Moving scores: {moving_scores}")
-    weights = convert_scores_to_weights(moving_scores, use_ranking=USE_RANKING_EMISSION_CONTROL)
-
-    # Apply emission control burning if enabled
     if ENABLE_EMISSION_CONTROL:
-        weights_burned = burn_weights(weights, metagraph).tolist()
+        weights_burned = distribute_weights_burn_base_remainder(
+            moving_scores,
+            metagraph,
+            total_weight=DEFAULT_TOTAL_WEIGHT,
+            burn_perc=EMISSION_CONTROL_PERC,
+            base_fraction=BASE_WEIGHT_FRACTION,
+            banned_hotkeys=banned_hotkeys,
+        )
     else:
-        weights_burned = weights
+        weights_burned = convert_scores_to_weights(
+            moving_scores, use_ranking=USE_RANKING_EMISSION_CONTROL
+        )
 
     bt.logging.info(f"DAEMON | {my_uid} | Setting weights on chain: {weights_burned}")
 
@@ -253,6 +312,7 @@ def send_validator_response_data(
     moving_scores: List[float],
     weights: List[float],
     incentives: List[float],
+    validator_uids: List[int] = None,
 ):
     if store_response_handler is not None:
         bt.logging.info(f"DAEMON | {validator_uid} | block number: {block_number}")
@@ -267,6 +327,7 @@ def send_validator_response_data(
         validator_response_data.moving_scores = moving_scores
         validator_response_data.calculated_weights = weights
         validator_response_data.incentives = incentives
+        validator_response_data.validator_uids = validator_uids or []
         store_response_handler.send_json(validator_response_data)
 
 def send_results(
@@ -450,6 +511,7 @@ def main():
     validator_results_data_handler = register_validator_results_data_handler(
         my_uid, wallet
     )
+    banned_hotkeys = get_banned_hotkeys()
 
     tempo = subtensor.tempo(config.netuid)
     unique_id = generate_unique_id(my_uid)
@@ -499,7 +561,9 @@ def main():
                     # Don't update weights if  all moving scores are 0 otherwise it might rate the weights equally.
                     continue
 
-                weights_burned = move_miner_weights(moving_scores, metagraph, my_uid)
+                weights_burned = move_miner_weights(
+                    moving_scores, metagraph, my_uid, banned_hotkeys=banned_hotkeys
+                )
 
                 subtensor.set_weights(
                     netuid=config.netuid,
@@ -509,10 +573,18 @@ def main():
                     wait_for_inclusion=True,
                 )
 
-                incentives = [
+                neurons = subtensor.neurons(netuid=config.netuid)
+                # Display only: when sharing to store/dashboard, send 0 for validators and banned UIDs so only miner incentives are visible. Does not affect on-chain weights.
+                incentives_zeroed = [
                     neuron.incentive
-                    for neuron in subtensor.neurons(netuid=config.netuid)
+                    if not neuron.validator_permit and neuron.hotkey not in banned_hotkeys
+                    else 0.0
+                    for neuron in neurons
                 ]
+                # Send same weights and moving_scores as set on chain so store/dashboard can verify if something breaks.
+                shared_weights = list(weights_burned)
+                shared_moving_scores = list(moving_scores)
+                validator_uids = [n.uid for n in neurons if n.validator_permit]
 
                 bt.logging.info(f"DAEMON | {my_uid} | Preparing to send json data")
 
@@ -524,9 +596,10 @@ def main():
                     block_number=subtensor.block,
                     has_summary_data=True,
                     vericore_responses=vericore_responses,
-                    moving_scores=moving_scores,
-                    weights=weights_burned,
-                    incentives=incentives,
+                    moving_scores=shared_moving_scores,
+                    weights=shared_weights,
+                    incentives=incentives_zeroed,
+                    validator_uids=validator_uids,
                 )
 
                 # reset unique id

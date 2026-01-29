@@ -14,3 +14,4 @@ class ValidatorResultsData:
     calculated_weights: List[float] = field(default_factory=list)
     incentives: List[float] = field(default_factory=list)
     moving_scores: List[float] = field(default_factory=list)
+    validator_uids: List[int] = field(default_factory=list)
