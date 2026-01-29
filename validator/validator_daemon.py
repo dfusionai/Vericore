@@ -215,8 +215,13 @@ def distribute_weights_burn_base_remainder(
     if weight_sum > 0:
         rounded = [int(round(w)) for w in weights]
         diff = int(total_weight) - sum(rounded)
-        # Apply diff to a miner so burn UID stays exactly burn_perc * total (same as previous burn calculation)
-        if diff != 0 and miner_uids_valid:
+        # Positive diff: add to first miner so burn UID stays exactly burn_perc * total.
+        # Negative diff: add to burn UID so we don't push a miner below zero (chain rejects negative weights).
+        if diff > 0 and miner_uids_valid:
+            rounded[miner_uids_valid[0]] += diff
+        elif diff < 0 and burn_uid is not None and burn_uid < n_uids:
+            rounded[burn_uid] += diff
+        elif diff != 0 and miner_uids_valid:
             rounded[miner_uids_valid[0]] += diff
         elif diff != 0 and burn_uid is not None and burn_uid < n_uids:
             rounded[burn_uid] += diff
