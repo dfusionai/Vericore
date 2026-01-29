@@ -154,6 +154,9 @@ def distribute_weights_burn_base_remainder(
     Distribute weight: burn first, then base to all miners, then remainder by ranking among miners only.
     Validators and banned UIDs get 0.
 
+    The burn miner (emission control UID) is allocated first so they have the most weight and thus
+    the most incentives; the constant burn_perc is applied before base and remainder.
+
     Args:
         moving_scores: List of calculated scores per UID (index = UID)
         metagraph: Bittensor metagraph
@@ -168,6 +171,7 @@ def distribute_weights_burn_base_remainder(
     n_uids = len(moving_scores)
     weights = [0.0] * n_uids
 
+    # Burn miner first: constant (burn_perc * total_weight) so they have the most incentives.
     burn_uid = find_target_uid(metagraph, EMISSION_CONTROL_HOTKEY)
     if burn_uid is not None and burn_uid < n_uids:
         weights[burn_uid] = burn_perc * total_weight
@@ -318,6 +322,7 @@ def send_validator_response_data(
     weights: List[float],
     incentives: List[float],
     validator_uids: List[int] = None,
+    burn_uid: int = -1,
 ):
     if store_response_handler is not None:
         bt.logging.info(f"DAEMON | {validator_uid} | block number: {block_number}")
@@ -333,6 +338,7 @@ def send_validator_response_data(
         validator_response_data.calculated_weights = weights
         validator_response_data.incentives = incentives
         validator_response_data.validator_uids = validator_uids or []
+        validator_response_data.burn_uid = burn_uid
         store_response_handler.send_json(validator_response_data)
 
 def send_results(
@@ -579,13 +585,11 @@ def main():
                 )
 
                 neurons = subtensor.neurons(netuid=config.netuid)
-                # Display only: when sharing to store/dashboard, send 0 for validators and banned UIDs so only miner incentives are visible. Does not affect on-chain weights.
-                incentives_zeroed = [
-                    neuron.incentive
-                    if not neuron.validator_permit and neuron.hotkey not in banned_hotkeys
-                    else 0.0
-                    for neuron in neurons
-                ]
+                burn_uid = find_target_uid(metagraph, EMISSION_CONTROL_HOTKEY)
+                burn_uid_for_store = burn_uid if burn_uid is not None else -1
+                # Incentives as sent (on chain).
+                # On-chain incentives (previous epoch / pre-reveal when commit-reveal enabled).
+                incentives_sent = [n.incentive for n in neurons]
                 # Send same weights and moving_scores as set on chain so store/dashboard can verify if something breaks.
                 shared_weights = list(weights_burned)
                 shared_moving_scores = list(moving_scores)
@@ -603,8 +607,9 @@ def main():
                     vericore_responses=vericore_responses,
                     moving_scores=shared_moving_scores,
                     weights=shared_weights,
-                    incentives=incentives_zeroed,
+                    incentives=incentives_sent,
                     validator_uids=validator_uids,
+                    burn_uid=burn_uid_for_store,
                 )
 
                 # reset unique id
