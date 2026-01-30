@@ -448,13 +448,14 @@ class SnippetFetcher:
         else:
             # Semaphore limits HTTP requests (fast, ~milliseconds)
             # Selenium fallback happens outside semaphore since it has its own pool limit
-            http_start = time.perf_counter()
+            # Time only the request (inside semaphore), not the wait - matches USE_HTML_PARSER_API path
             async with self.limiter:
                 bt.logging.info(
                     f"{request_id} | {miner_uid} | {endpoint} | Snippet Fetcher: Rendering page - fetching snippet - passed semaphore"
                 )
+                http_start = time.perf_counter()
                 response = await self.send_get_request(request_id, miner_uid, endpoint, headers, referer=referer)
-            http_time_secs = time.perf_counter() - http_start if response is not None else "NA"
+                http_time_secs = time.perf_counter() - http_start if response is not None else "NA"
 
             if response is not None:
                 response.http_time_secs = http_time_secs if isinstance(http_time_secs, (int, float)) else "NA"
