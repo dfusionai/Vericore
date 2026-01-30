@@ -139,6 +139,37 @@ def get_validators_from_metagraph(metagraph, max_validators=10, serving_only=Fal
     return validators
 
 
+def get_validators_with_permit_and_axon(metagraph):
+    """Get all validators that the miner would accept (same logic as miner/perplexity/miner.py blacklist_fn).
+
+    A validator is included iff:
+    - hotkey is in metagraph
+    - neuron.validator_permit is True
+    - neuron.axon_info is not None
+    - neuron.axon_info.is_serving is True
+
+    This mirrors the miner's blacklist_fn: accept only when these checks pass (no axon_info or
+    not is_serving => reject; e.g. 0.0.0.0 validators have is_serving False).
+    """
+    validators = []
+    for i, neuron in enumerate(metagraph.neurons):
+        if neuron.hotkey not in metagraph.hotkeys:
+            continue
+        if not neuron.validator_permit:
+            continue
+        if neuron.axon_info is None:
+            continue
+        if not getattr(neuron.axon_info, "is_serving", False):
+            continue
+        validators.append({
+            "uid": i,
+            "hotkey": neuron.hotkey,
+            "ip": getattr(neuron.axon_info, "ip", "0.0.0.0"),
+            "port": getattr(neuron.axon_info, "port", 0),
+        })
+    return validators
+
+
 def get_miners_from_metagraph(metagraph, max_miners=5):
     """Get a list of miners (non-validators) from the metagraph"""
     miners = []
@@ -153,6 +184,33 @@ def get_miners_from_metagraph(metagraph, max_miners=5):
             if len(miners) >= max_miners:
                 break
     return miners
+
+
+def test_fetch_validators_with_permit_and_axon(config):
+    """Fetch all validators that have a permit and a valid axon IP; print their UIDs."""
+    print("=" * 70)
+    print("Fetch validators: permit + valid axon IP (not 0.0.0.0, is_serving)")
+    print("=" * 70)
+    print(f"Network: {config.subtensor.network}")
+    print(f"Netuid: {config.netuid}")
+    print()
+
+    subtensor = bt.subtensor(config=config)
+    metagraph = subtensor.metagraph(config.netuid)
+    metagraph.sync()
+
+    validators = get_validators_with_permit_and_axon(metagraph)
+    uids = [v["uid"] for v in validators]
+
+    print(f"Found {len(validators)} validators with permit and valid axon IP")
+    print()
+    print("UIDs:", uids)
+    print()
+    for v in validators:
+        print(f"  UID {v['uid']}: {v['hotkey'][:16]}... {v['ip']}:{v['port']}")
+
+    # Assert so pytest reports pass/fail; we always "pass" if we got here
+    assert isinstance(uids, list)
 
 
 def test_blacklist_with_real_network(config):
@@ -525,9 +583,18 @@ def test_blacklist_with_real_network(config):
 
 
 def get_config():
-    """Get Bittensor config from command line arguments"""
+    """Get Bittensor config from command line arguments or environment variables.
+
+    When run under pytest, CLI args like --netuid are not available; use env vars instead:
+      NETUID=70 pytest tests/manual/test_blacklist_integration.py::test_fetch_validators_with_permit_and_axon -v -s
+    """
     parser = argparse.ArgumentParser(description="Integration test for miner blacklist function")
-    parser.add_argument("--netuid", type=int, default=1, help="Subnet UID")
+    parser.add_argument(
+        "--netuid",
+        type=int,
+        default=int(os.environ.get("NETUID", "1")),
+        help="Subnet UID (default: 1, or env NETUID)",
+    )
     bt.subtensor.add_args(parser)
     bt.wallet.add_args(parser)
     bt.logging.add_args(parser)
