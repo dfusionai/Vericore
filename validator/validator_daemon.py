@@ -45,15 +45,23 @@ def find_target_uid(metagraph, hotkey):
             emission_control_uid = neuron.uid
             return emission_control_uid
 
-def distribute_weights_by_ranking(moving_scores, total_weight=DEFAULT_TOTAL_WEIGHT, top_percentage=RANKING_EMISSION_TOP_PERC):
+def distribute_weights_by_ranking(
+    moving_scores,
+    total_weight=DEFAULT_TOTAL_WEIGHT,
+    top_percentage=RANKING_EMISSION_TOP_PERC,
+    valid_miner_indices=None,
+):
     """
     Distribute weights using ranking-based geometric progression.
     Top miner gets top_percentage (default RANKING_EMISSION_TOP_PERC), second gets 25%, third gets 12.5%, etc.
 
     Args:
-        moving_scores: List of calculated scores for each miner
+        moving_scores: List of calculated scores for each miner (or per-UID scores; index = position)
         total_weight: Total weight to distribute (default DEFAULT_TOTAL_WEIGHT)
         top_percentage: Percentage of total weight for top miner (default RANKING_EMISSION_TOP_PERC)
+        valid_miner_indices: Optional set or list of indices into moving_scores that are valid miners.
+            If None or empty, all indices receive weight (current logic). If non-empty, only indices
+            in this set receive weight; others get 0.
 
     Returns:
         List of normalized weights summing to total_weight (as integers)
@@ -63,10 +71,16 @@ def distribute_weights_by_ranking(moving_scores, total_weight=DEFAULT_TOTAL_WEIG
 
     # Sort scores descending
     sorted_pairs = sorted(enumerate(moving_scores), key=lambda x: x[1], reverse=True)
+
+    # If valid_miner_indices given, restrict ranking to those indices only; others get 0.
+    if valid_miner_indices:
+        valid_set = set(valid_miner_indices)
+        sorted_pairs = [(idx, score) for idx, score in sorted_pairs if idx in valid_set]
+
     weights = [0.0] * len(moving_scores)
     current_percentage = top_percentage
 
-    # Distribute weights based on ranking
+    # Distribute weights based on ranking (only among valid miners when valid_miner_indices is set)
     for i, (idx, _) in enumerate(sorted_pairs):
         if i == 0:
             allocated = total_weight * top_percentage
@@ -77,18 +91,14 @@ def distribute_weights_by_ranking(moving_scores, total_weight=DEFAULT_TOTAL_WEIG
 
     # Give any remainder to the first miner to ensure sum is exactly total_weight
     weight_sum = sum(weights)
-    if weight_sum > 0 and weight_sum < total_weight:
-        # Add remainder to top miner
+    if weight_sum > 0 and weight_sum < total_weight and sorted_pairs:
         top_idx = sorted_pairs[0][0]
         weights[top_idx] += (total_weight - weight_sum)
 
     # Round to integers; sum(rounded) can be off by one (or more) from total_weight.
-    # Add the shortfall/surplus to the top miner so the returned list sums to exactly total_weight.
-    # Example: two miners, floats [49151.25, 16383.75] (sum 65535). rounded=[49151, 16384], sum=65534.
-    #   diff=1, top gets 49152 -> final sum 65535.
     rounded = [int(round(w)) for w in weights]
     diff = int(total_weight) - sum(rounded)
-    if diff != 0:
+    if diff != 0 and sorted_pairs:
         top_idx = sorted_pairs[0][0]
         rounded[top_idx] += diff
     return rounded
@@ -149,6 +159,7 @@ def distribute_weights_burn_base_remainder(
     burn_perc=EMISSION_CONTROL_PERC,
     base_fraction=BASE_WEIGHT_FRACTION,
     banned_hotkeys=None,
+    validator_uid=None,
 ):
     """
     Distribute weight: burn first, then base to all miners, then remainder by ranking among miners only.
@@ -164,6 +175,7 @@ def distribute_weights_burn_base_remainder(
         burn_perc: Fraction of total to burn UID (default 0.80)
         base_fraction: Fraction of total for base pool (default 0.01)
         banned_hotkeys: Set of hotkey addresses to exclude (get 0 weight)
+        validator_uid: Optional validator UID for logging (e.g. when no miners to distribute to)
 
     Returns:
         List of weights per UID (integers) summing to total_weight
@@ -185,6 +197,9 @@ def distribute_weights_burn_base_remainder(
 
     if n_miners == 0:
         # No miners to distribute to: give 100% to burn UID so sum(weights) == total_weight.
+        bt.logging.warning(
+            f"DAEMON | {validator_uid} | No miners to distribute to (all UIDs are validators or banned); giving 100% weight to burn UID"
+        )
         if burn_uid is not None and burn_uid < n_uids:
             weights[burn_uid] = total_weight
         # Example: 5 UIDs, burn_uid=0, UIDs 1-4 validators -> [65535, 0, 0, 0, 0]
@@ -256,6 +271,7 @@ def move_miner_weights(moving_scores, metagraph, my_uid, banned_hotkeys=None):
             burn_perc=EMISSION_CONTROL_PERC,
             base_fraction=BASE_WEIGHT_FRACTION,
             banned_hotkeys=banned_hotkeys,
+            validator_uid=my_uid,
         )
     else:
         weights_burned = convert_scores_to_weights(

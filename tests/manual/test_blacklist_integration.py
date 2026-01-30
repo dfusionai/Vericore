@@ -37,6 +37,7 @@ This test will:
 import sys
 import os
 import argparse
+import pytest
 import bittensor as bt
 
 # Add the parent directory to the path
@@ -533,6 +534,12 @@ def get_config():
 
     config = bt.config(parser)
     return config
+
+
+@pytest.fixture
+def config():
+    """Pytest fixture providing Bittensor config (uses get_config() / CLI defaults)."""
+    return get_config()
 
 
 if __name__ == '__main__':
