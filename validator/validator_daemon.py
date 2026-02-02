@@ -160,6 +160,7 @@ def distribute_weights_burn_base_remainder(
     base_fraction=BASE_WEIGHT_FRACTION,
     banned_hotkeys=None,
     validator_uid=None,
+    miner_counts=None,
 ):
     """
     Distribute weight: burn first, then base to all miners, then remainder by ranking among miners only.
@@ -176,6 +177,9 @@ def distribute_weights_burn_base_remainder(
         base_fraction: Fraction of total for base pool (default 0.01)
         banned_hotkeys: Set of hotkey addresses to exclude (get 0 weight)
         validator_uid: Optional validator UID for logging (e.g. when no miners to distribute to)
+        miner_counts: Optional list of request counts per UID (index = UID). When provided, used to
+            break ties when scores are equal: miners with more requests rank higher (avoids new/no-
+            request miners getting top weight when many miners have the same score, e.g. 0).
 
     Returns:
         List of weights per UID (integers) summing to total_weight
@@ -218,16 +222,30 @@ def distribute_weights_burn_base_remainder(
     remainder = max(0.0, remainder)
 
     # Use validator's moving_scores (not computed weights) to rank miners for remainder.
-    miner_scores = [moving_scores[uid] for uid in miner_uids if uid < n_uids]
+    # When miner_counts is provided, break ties by count (more requests = higher rank) so that
+    # new/no-request miners don't get top weight when many miners have the same score (e.g. 0).
     miner_uids_valid = [uid for uid in miner_uids if uid < n_uids]
-    if miner_uids_valid and remainder > 0:
+    if miner_counts is not None and len(miner_counts) >= n_uids:
+        # Sort by (score desc, count desc) so same score -> more requests ranks higher.
+        uid_score_count = [
+            (uid, moving_scores[uid], miner_counts[uid])
+            for uid in miner_uids_valid
+        ]
+        uid_score_count.sort(key=lambda x: (x[1], x[2]), reverse=True)
+        # Parallel lists in rank order: ranking_weights[i] from distribute_weights_by_ranking
+        # will be assigned to miner_uids_sorted[i]; miner_scores_sorted is the score list for that call.
+        miner_uids_sorted = [x[0] for x in uid_score_count]
+        miner_scores_sorted = [x[1] for x in uid_score_count]
+    else:
+        miner_uids_sorted = miner_uids_valid
+        miner_scores_sorted = [moving_scores[uid] for uid in miner_uids_sorted]
+    if miner_uids_sorted and remainder > 0:
         ranking_weights = distribute_weights_by_ranking(
-            miner_scores,
+            miner_scores_sorted,
             total_weight=remainder,
         )
-        for i, uid in enumerate(miner_uids_valid):
+        for i, uid in enumerate(miner_uids_sorted):
             if i < len(ranking_weights):
-                # i = index in miner list (for ranking_weights); uid = UID (for weights).
                 weights[uid] += ranking_weights[i]
 
     weight_sum = sum(weights)
@@ -236,19 +254,19 @@ def distribute_weights_burn_base_remainder(
         diff = int(total_weight) - sum(rounded)
         # Positive diff: add to first miner so burn UID stays exactly burn_perc * total.
         # Negative diff: add to burn UID so we don't push a miner below zero (chain rejects negative weights).
-        if diff > 0 and miner_uids_valid:
-            rounded[miner_uids_valid[0]] += diff
+        if diff > 0 and miner_uids_sorted:
+            rounded[miner_uids_sorted[0]] += diff
         elif diff < 0 and burn_uid is not None and burn_uid < n_uids:
             rounded[burn_uid] += diff
-        elif diff != 0 and miner_uids_valid:
-            rounded[miner_uids_valid[0]] += diff
+        elif diff != 0 and miner_uids_sorted:
+            rounded[miner_uids_sorted[0]] += diff
         elif diff != 0 and burn_uid is not None and burn_uid < n_uids:
             rounded[burn_uid] += diff
         return rounded
     return [int(round(w)) for w in weights]
 
 
-def move_miner_weights(moving_scores, metagraph, my_uid, banned_hotkeys=None):
+def move_miner_weights(moving_scores, metagraph, my_uid, banned_hotkeys=None, miner_counts=None):
     """
     Distribute weight: burn first, then base to all miners, then remainder by ranking.
     Validators and banned UIDs get 0.
@@ -258,6 +276,7 @@ def move_miner_weights(moving_scores, metagraph, my_uid, banned_hotkeys=None):
         metagraph: Bittensor metagraph object
         my_uid: Validator UID for logging purposes
         banned_hotkeys: Set of hotkey addresses to exclude (get 0 weight)
+        miner_counts: Optional list of request counts per UID; used to break ties (more requests = higher rank).
 
     Returns:
         List of processed weights ready to be set on chain
@@ -272,6 +291,7 @@ def move_miner_weights(moving_scores, metagraph, my_uid, banned_hotkeys=None):
             base_fraction=BASE_WEIGHT_FRACTION,
             banned_hotkeys=banned_hotkeys,
             validator_uid=my_uid,
+            miner_counts=miner_counts,
         )
     else:
         weights_burned = convert_scores_to_weights(
@@ -578,6 +598,7 @@ def main():
 
                 # create new moving scores array in case new miners have been loaded
                 moving_scores= [miner_score_record.calculated_score for miner_score_record in miner_score_cache]
+                miner_counts = [miner_score_record.count for miner_score_record in miner_score_cache]
 
                 bt.logging.info(f"DAEMON | {my_uid} | Moving scores: {moving_scores}")
 
@@ -589,7 +610,7 @@ def main():
                     continue
 
                 weights_burned = move_miner_weights(
-                    moving_scores, metagraph, my_uid, banned_hotkeys=banned_hotkeys
+                    moving_scores, metagraph, my_uid, banned_hotkeys=banned_hotkeys, miner_counts=miner_counts
                 )
 
                 subtensor.set_weights(
