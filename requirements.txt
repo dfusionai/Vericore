@@ -8,6 +8,7 @@ pydantic
 transformers
 selenium
 fuzzywuzzy
+python-Levenshtein  # required: fuzzywuzzy's pure-Python fallback gives wrong partial_ratio for short-vs-long (snippet vs page)
 sentence-transformers
 python-whois
 beautifulsoup4

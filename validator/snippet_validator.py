@@ -1,10 +1,15 @@
 import time
+import unicodedata
 import bittensor as bt
 import tldextract
 import ipaddress
 import re
 import os
 from urllib.parse import urlparse, parse_qs, unquote_plus
+
+# python-Levenshtein required: without it, fuzz.partial_ratio uses a buggy pure-Python path
+# that returns wrong low scores for short-vs-long (snippet vs page).
+from fuzzywuzzy import fuzz
 
 from shared.blacklisted_domain_cache import is_blacklisted_domain
 from shared.exceptions import InsecureProtocolError
@@ -37,6 +42,10 @@ from validator.statement_context_evaluator import assess_statement_async
 from validator.web_page_validator import is_search_web_page
 
 MIN_SNIPPET_CONTEXT_SIMILARITY_SCORE = .65
+
+# Snippet-in-page verification: fuzzy fallback when exact (normalized) match fails
+FUZZY_VERIFY_THRESHOLD = 0.94  # ratio in [0, 1]; only accept if best match >= this (character-level tolerance only)
+MIN_SNIPPET_LENGTH_FOR_FUZZY = 25  # minimum normalized snippet length to run fuzzy check (avoids trivial matches)
 
 class SnippetValidator:
 
@@ -134,6 +143,8 @@ class SnippetValidator:
     ) -> bool:
         try:
             def normalize_text(text):
+                # Unicode normalization: same character, different bytes (e.g. quotes, accents, compatibility variants)
+                text = unicodedata.normalize("NFKC", text or "")
                 # Remove patterns like [ 1 ], [12], [ 123 ]
                 text = re.sub(r"\[\s*\d+\s*\]", '', text)
                 # Standardize quotes
@@ -158,9 +169,19 @@ class SnippetValidator:
                 if normalized_snippet in normalized_page:
                     bt.logging.info(f"{request_id} | {miner_uid} | {url} | Web page is EXACTLY the same as the snippet (normalized).")
                     return True
-                else:
-                    bt.logging.info(f"{request_id} | {miner_uid} | {url} | Web page is NOT exactly the same as the snippet (normalized)")
-                    return False
+
+                # Fuzzy fallback: same text with character-level differences only (no paraphrase)
+                if len(normalized_snippet) >= MIN_SNIPPET_LENGTH_FOR_FUZZY and normalized_page:
+                    # partial_ratio: best match of snippet against any substring of page (0-100)
+                    ratio = fuzz.partial_ratio(normalized_snippet, normalized_page) / 100.0
+                    if ratio >= FUZZY_VERIFY_THRESHOLD:
+                        bt.logging.info(
+                            f"{request_id} | {miner_uid} | {url} | Snippet verified via fuzzy match (ratio={ratio:.2f}, threshold={FUZZY_VERIFY_THRESHOLD})."
+                        )
+                        return True
+
+                bt.logging.info(f"{request_id} | {miner_uid} | {url} | Web page is NOT exactly the same as the snippet (normalized)")
+                return False
             except Exception as e:
                 bt.logging.error(
                     f"{request_id} | {miner_uid} | {url} | Error verifying snippet in rendered page: {e}"
