@@ -7,6 +7,8 @@ import re
 import os
 from urllib.parse import urlparse, parse_qs, unquote_plus
 
+# python-Levenshtein required: without it, fuzz.partial_ratio uses a buggy pure-Python path
+# that returns wrong low scores for short-vs-long (snippet vs page).
 from fuzzywuzzy import fuzz
 
 from shared.blacklisted_domain_cache import is_blacklisted_domain
