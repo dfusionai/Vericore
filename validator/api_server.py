@@ -829,11 +829,15 @@ async def veridex_query(request: Request):
 if __name__ == "__main__":
     import uvicorn
 
+    parser = argparse.ArgumentParser(description="Run Vericore API server")
+    parser.add_argument("--port", type=int, default=8080, help="Port to bind (default: 8080)")
+    args = parser.parse_args()
+
     # Run uvicorn with one worker to ensure a single instance of APIQueryHandler.
     uvicorn.run(
         "validator.api_server:app",
         host="0.0.0.0",
-        port=8080,
+        port=args.port,
         reload=False,
         timeout_keep_alive=500,
         workers=1,
