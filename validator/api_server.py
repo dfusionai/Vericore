@@ -71,6 +71,7 @@ class MinerSelection:
     neuron_info: NeuronInfo
     scores: float
     request_count: int
+    is_miner: bool = True  # False for validators; only is_miner=True are sent requests
 
     def calculate_average_score(self) -> float:
         if self.request_count == 0:
@@ -589,7 +590,6 @@ class APIQueryHandler:
 
     def loading_miners(self, neurons: List[NeuronInfo]):
         bt.logging.info(f"{self.my_uid} | {self.my_uid} | Loading Miners")
-        # return [n for n in neurons if not n.validator_permit]
         if self.miner_cache is None or len(self.miner_cache) == 0:
             bt.logging.info(f"{self.my_uid} | {self.my_uid} | Loading brand new miners")
             return [
@@ -598,13 +598,13 @@ class APIQueryHandler:
                     miner_hotkey=neuron.hotkey,
                     neuron_info=neuron,
                     scores=0,
-                    request_count=0
+                    request_count=0,
+                    is_miner=not neuron.validator_permit,
                 )
                 for index, neuron in enumerate(neurons)
             ]
 
         bt.logging.info(f"{self.my_uid} | Checking new miners have been loaded ")
-        # Loop through cache and see whether the hotkey is the same as the neuron
         miner_cache_length = len(self.miner_cache)
         new_miner_cache = list(self.miner_cache)
         for index, neuron in enumerate(neurons):
@@ -616,6 +616,7 @@ class APIQueryHandler:
                     miner_cache.scores = 0
                     miner_cache.request_count = 0
 
+                miner_cache.is_miner = not neuron.validator_permit
                 # Always update neuron_info with fresh chain data
                 miner_cache.neuron_info = neuron
             else:
@@ -625,7 +626,8 @@ class APIQueryHandler:
                     miner_hotkey=neuron.hotkey,
                     neuron_info=neuron,
                     scores=0,
-                    request_count=0
+                    request_count=0,
+                    is_miner=not neuron.validator_permit,
                 )
                 new_miner_cache.append(miner_selection)
 
@@ -685,7 +687,8 @@ class APIQueryHandler:
 
         bt.logging.info(f"{self.my_uid} | Selecting miner subset")
 
-        all_miners = self.miner_cache
+        # Only consider miners (exclude validators) for sending requests
+        all_miners = [m for m in self.miner_cache if m.is_miner]
 
         if len(all_miners) <= number_of_miners:
             return all_miners
@@ -695,11 +698,11 @@ class APIQueryHandler:
 
         bt.logging.info(f"{self.my_uid} | Weights calculated for miners")
 
-        # select the miners index  based on the weights
-        selected_miner_indexes = self.select_miner(weighted_miners, number_of_miners)
+        # select the miners by uid based on the weights
+        selected_miner_uids = self.select_miner(weighted_miners, number_of_miners)
 
-        # get all the miners for the selected indexes
-        selected_miners =  [all_miners[i] for i in selected_miner_indexes]
+        # get MinerSelection for each selected uid (weighted_miners are (miner_uid, weight))
+        selected_miners = [next(m for m in all_miners if m.miner_uid == uid) for uid in selected_miner_uids]
 
         null_miners = [miner for miner in selected_miners if miner.neuron_info.axon_info is None or not miner.neuron_info.axon_info.is_serving]
 
@@ -712,18 +715,18 @@ class APIQueryHandler:
             for i, null_miner in enumerate(null_miners):
                 if available_replacement_ids:
                     available_replacements = [weighted_miner for weighted_miner in weighted_miners if weighted_miner[0] in available_replacement_ids]
-                    replacement_miner_indexes = self.select_miner(available_replacements, 1)
-                    if len(replacement_miner_indexes) != 0:
-                        replacement_miner_id = replacement_miner_indexes[0]
-                        selected_miner_indexes.append(replacement_miner_id)
-                        available_replacement_ids.remove(replacement_miner_id)
+                    replacement_miner_uids = self.select_miner(available_replacements, 1)
+                    if len(replacement_miner_uids) != 0:
+                        replacement_miner_uid = replacement_miner_uids[0]
+                        selected_miner_uids.append(replacement_miner_uid)
+                        available_replacement_ids.remove(replacement_miner_uid)
                 else:
                     break
 
-        bt.logging.info(f"{self.my_uid} | Selected {len(selected_miner_indexes)} miners with {len(null_miners)} null axons")
+        bt.logging.info(f"{self.my_uid} | Selected {len(selected_miner_uids)} miners with {len(null_miners)} null axons")
 
         # recalculate all miners to be returned
-        selected_miners =  [all_miners[i] for i in selected_miner_indexes]
+        selected_miners = [next(m for m in all_miners if m.miner_uid == uid) for uid in selected_miner_uids]
 
         return selected_miners
 
@@ -808,14 +811,14 @@ async def veridex_query(request: Request):
     result.total_other_time_secs = sum(m.total_other_time_secs for m in result.results)
 
     all_snippet_times = [
-        r.verify_miner_time_taken_secs 
-        for m in result.results 
-        for r in m.vericore_responses 
+        r.verify_miner_time_taken_secs
+        for m in result.results
+        for r in m.vericore_responses
         if r.verify_miner_time_taken_secs > 0
     ]
     result.avg_snippet_time_secs = sum(all_snippet_times) / len(all_snippet_times) if all_snippet_times else 0
     result.max_snippet_time_secs = max(all_snippet_times) if all_snippet_times else 0
-    
+
     # Log request-level performance summary
     bt.logging.info(
         f"{request_id} | Request complete | Duration: {duration:.3f}s | Miners: {result.miner_count} | "
