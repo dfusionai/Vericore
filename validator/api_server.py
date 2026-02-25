@@ -64,6 +64,19 @@ MIN_WEIGHT = 1.0  # Floor to give new miners a chance
 EXPLORATION_FACTOR = 0.1  # 10% exploration
 NEW_MINER_BONUS = 2.0
 
+
+def get_parser():
+    """Build argument parser with Bittensor and axon args (shared by get_config and __main__)."""
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--custom", default="my_custom_value", help="Custom value")
+    parser.add_argument("--netuid", type=int, default=1, help="Chain subnet uid")
+    bt.subtensor.add_args(parser)
+    bt.logging.add_args(parser)
+    bt.wallet.add_args(parser)
+    bt.axon.add_args(parser)
+    return parser
+
+
 @dataclass
 class MinerSelection:
     miner_uid: int
@@ -104,13 +117,7 @@ class APIQueryHandler:
         os.makedirs(self.results_dir, exist_ok=True)
 
     def get_config(self):
-        parser = argparse.ArgumentParser()
-        parser.add_argument("--custom", default="my_custom_value", help="Custom value")
-        parser.add_argument("--netuid", type=int, default=1, help="Chain subnet uid")
-        bt.subtensor.add_args(parser)
-        bt.logging.add_args(parser)
-        bt.wallet.add_args(parser)
-        bt.axon.add_args(parser)
+        parser = get_parser()
         config = bt.config(parser)
 
         bt.logging.info(f"get_config: {config}")
@@ -832,7 +839,7 @@ async def veridex_query(request: Request):
 if __name__ == "__main__":
     import uvicorn
 
-    parser = argparse.ArgumentParser(description="Run Vericore API server")
+    parser = get_parser()
     parser.add_argument("--port", type=int, default=8080, help="Port to bind (default: 8080)")
     args = parser.parse_args()
 
