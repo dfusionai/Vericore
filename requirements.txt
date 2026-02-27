@@ -19,3 +19,4 @@ httpx[http2]
 tldextract
 certifi
 PyJWT>=2.0
+cryptography  # required by PyJWT for RS256/RS384/RS512

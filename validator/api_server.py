@@ -873,7 +873,8 @@ class JWTAuthMiddleware(BaseHTTPMiddleware):
             )
         except jwt.InvalidAlgorithmError as e:
             bt.logging.warning(
-                f"JWT auth: 401 for {request.url.path} — algorithm not allowed: {e}"
+                f"JWT auth: 401 for {request.url.path} — algorithm not allowed: {e}. "
+                f"For RS256/RS384/RS512 ensure 'cryptography' is installed (pip install cryptography)."
             )
             return JSONResponse(
                 content={"detail": "Invalid or expired token"},
