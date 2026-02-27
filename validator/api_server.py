@@ -807,9 +807,17 @@ class JWTAuthMiddleware(BaseHTTPMiddleware):
         if request.url.path == "/version":
             return await call_next(request)
         auth = request.headers.get("Authorization")
-        if not auth or not auth.startswith("Bearer "):
-            bt.logging.debug(
-                f"JWT auth: no Bearer token received for {request.url.path} (missing or bad Authorization header)"
+        if not auth:
+            bt.logging.warning(
+                f"JWT auth: 401 for {request.url.path} — Authorization header missing"
+            )
+            return JSONResponse(
+                content={"detail": "Missing or invalid Authorization"},
+                status_code=401,
+            )
+        if not auth.startswith("Bearer "):
+            bt.logging.warning(
+                f"JWT auth: 401 for {request.url.path} — Authorization header present but not Bearer (prefix: {auth[:20]!r}...)"
             )
             return JSONResponse(
                 content={"detail": "Missing or invalid Authorization"},
@@ -817,16 +825,18 @@ class JWTAuthMiddleware(BaseHTTPMiddleware):
             )
         token = auth[7:].strip()
         if not token:
-            bt.logging.debug(
-                f"JWT auth: empty Bearer token for {request.url.path}"
+            bt.logging.warning(
+                f"JWT auth: 401 for {request.url.path} — Bearer scheme with empty token"
             )
             return JSONResponse(
                 content={"detail": "Missing or invalid Authorization"},
                 status_code=401,
             )
-        bt.logging.info(f"JWT auth: Bearer token received for {request.url.path}")
+        bt.logging.info(
+            f"JWT auth: Bearer token received for {request.url.path} (token length={len(token)})"
+        )
         if not VALIDATOR_JWT_PUBLIC_KEY:
-            bt.logging.warning("JWT auth: server not configured (no public key); rejecting")
+            bt.logging.warning("JWT auth: 503 — server not configured (no public key); rejecting")
             return JSONResponse(
                 content={"detail": "Server auth not configured"},
                 status_code=503,
@@ -838,16 +848,48 @@ class JWTAuthMiddleware(BaseHTTPMiddleware):
                 algorithms=[VALIDATOR_JWT_ALGORITHM],
             )
             if payload.get("sub") != VALIDATOR_PROXY_SUB:
-                bt.logging.info(
-                    f"JWT auth: token rejected for {request.url.path} (invalid sub)"
+                bt.logging.warning(
+                    f"JWT auth: 401 for {request.url.path} — invalid sub: got {payload.get('sub')!r}, expected {VALIDATOR_PROXY_SUB!r}"
                 )
                 return JSONResponse(
                     content={"detail": "Invalid or expired token"},
                     status_code=401,
                 )
-        except jwt.InvalidTokenError:
-            bt.logging.info(
-                f"JWT auth: token rejected for {request.url.path} (invalid or expired)"
+        except jwt.ExpiredSignatureError as e:
+            bt.logging.warning(
+                f"JWT auth: 401 for {request.url.path} — token expired: {e}"
+            )
+            return JSONResponse(
+                content={"detail": "Invalid or expired token"},
+                status_code=401,
+            )
+        except jwt.InvalidSignatureError as e:
+            bt.logging.warning(
+                f"JWT auth: 401 for {request.url.path} — invalid signature (wrong key or tampered): {e}"
+            )
+            return JSONResponse(
+                content={"detail": "Invalid or expired token"},
+                status_code=401,
+            )
+        except jwt.InvalidAlgorithmError as e:
+            bt.logging.warning(
+                f"JWT auth: 401 for {request.url.path} — algorithm not allowed: {e}"
+            )
+            return JSONResponse(
+                content={"detail": "Invalid or expired token"},
+                status_code=401,
+            )
+        except jwt.DecodeError as e:
+            bt.logging.warning(
+                f"JWT auth: 401 for {request.url.path} — decode error: {e}"
+            )
+            return JSONResponse(
+                content={"detail": "Invalid or expired token"},
+                status_code=401,
+            )
+        except jwt.InvalidTokenError as e:
+            bt.logging.warning(
+                f"JWT auth: 401 for {request.url.path} — {type(e).__name__}: {e}"
             )
             return JSONResponse(
                 content={"detail": "Invalid or expired token"},
