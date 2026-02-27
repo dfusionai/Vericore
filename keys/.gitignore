@@ -1,0 +1,5 @@
+# Ignore PEM and private key files; do not commit secrets.
+*.pem
+*.key
+# Allow the validator JWT public key (safe to share; used to verify proxy JWTs).
+!validator_jwt_public.pem

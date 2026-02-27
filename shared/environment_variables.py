@@ -14,6 +14,26 @@ HTML_PARSER_API_URL = os.environ.get("HTML_PARSER_API_URL", "https://api.snippet
 
 VERICORE_VALIDATOR_VERSION = os.environ.get("VERICORE_VALIDATOR_VERSION", "v0.0.43.3")
 
+# JWT auth for proxy -> validator: defaults to keys/validator_jwt_public.pem.
+# Override with VALIDATOR_JWT_PUBLIC_KEY_FILE (path) or VALIDATOR_JWT_PUBLIC_KEY (inline PEM).
+_DEFAULT_JWT_PUBLIC_KEY_FILE = "keys/validator_jwt_public.pem"
+
+
+def _load_jwt_public_key():
+    inline = os.environ.get("VALIDATOR_JWT_PUBLIC_KEY")
+    if inline:
+        return inline
+    key_file = os.environ.get("VALIDATOR_JWT_PUBLIC_KEY_FILE", _DEFAULT_JWT_PUBLIC_KEY_FILE)
+    path = os.path.abspath(os.path.expanduser(key_file))
+    if os.path.isfile(path):
+        with open(path, "r", encoding="utf-8") as f:
+            return f.read()
+    return None
+
+
+VALIDATOR_JWT_PUBLIC_KEY = _load_jwt_public_key()
+VALIDATOR_JWT_ALGORITHM = os.environ.get("VALIDATOR_JWT_ALGORITHM", "RS256")
+
 INITIAL_WEIGHT = 0.7
 
 NEUTRAL_SCORE=10

@@ -9,14 +9,21 @@ from datetime import datetime
 from dataclasses import dataclass
 from typing import List
 from bittensor import NeuronInfo
+import jwt
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
 from contextlib import asynccontextmanager
 
 import bittensor as bt
 
-from shared.environment_variables import VERICORE_VALIDATOR_VERSION, IMMUNITY_PERIOD
+from shared.environment_variables import (
+    VERICORE_VALIDATOR_VERSION,
+    IMMUNITY_PERIOD,
+    VALIDATOR_JWT_PUBLIC_KEY,
+    VALIDATOR_JWT_ALGORITHM,
+)
 from shared.veridex_protocol import (
     VericoreSynapse,
     VeridexResponse,
@@ -790,8 +797,61 @@ app.add_middleware(
     allow_headers=["*"],  # Allow all headers
 )
 
+
+# JWT auth: require Bearer token on all endpoints except /version
+VALIDATOR_PROXY_SUB = "validator_proxy"
+
+
+class JWTAuthMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        if request.url.path == "/version":
+            return await call_next(request)
+        auth = request.headers.get("Authorization")
+        if not auth or not auth.startswith("Bearer "):
+            return JSONResponse(
+                content={"detail": "Missing or invalid Authorization"},
+                status_code=401,
+            )
+        token = auth[7:].strip()
+        if not token:
+            return JSONResponse(
+                content={"detail": "Missing or invalid Authorization"},
+                status_code=401,
+            )
+        if not VALIDATOR_JWT_PUBLIC_KEY:
+            return JSONResponse(
+                content={"detail": "Server auth not configured"},
+                status_code=503,
+            )
+        try:
+            payload = jwt.decode(
+                token,
+                VALIDATOR_JWT_PUBLIC_KEY,
+                algorithms=[VALIDATOR_JWT_ALGORITHM],
+            )
+            if payload.get("sub") != VALIDATOR_PROXY_SUB:
+                return JSONResponse(
+                    content={"detail": "Invalid or expired token"},
+                    status_code=401,
+                )
+        except jwt.InvalidTokenError:
+            return JSONResponse(
+                content={"detail": "Invalid or expired token"},
+                status_code=401,
+            )
+        return await call_next(request)
+
+
+app.add_middleware(JWTAuthMiddleware)
+
+
 # Create the APIQueryHandler during startup and store it in app.state.
 async def startup_event():
+    if not VALIDATOR_JWT_PUBLIC_KEY:
+        bt.logging.warning(
+            "JWT public key not set (set VALIDATOR_JWT_PUBLIC_KEY or "
+            "VALIDATOR_JWT_PUBLIC_KEY_FILE); protected endpoints will return 503."
+        )
     print("startup_event")
     app.state.handler = APIQueryHandler()
     print("APIQueryHandler instance created at startup.")
