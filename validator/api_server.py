@@ -808,17 +808,25 @@ class JWTAuthMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
         auth = request.headers.get("Authorization")
         if not auth or not auth.startswith("Bearer "):
+            bt.logging.debug(
+                f"JWT auth: no Bearer token received for {request.url.path} (missing or bad Authorization header)"
+            )
             return JSONResponse(
                 content={"detail": "Missing or invalid Authorization"},
                 status_code=401,
             )
         token = auth[7:].strip()
         if not token:
+            bt.logging.debug(
+                f"JWT auth: empty Bearer token for {request.url.path}"
+            )
             return JSONResponse(
                 content={"detail": "Missing or invalid Authorization"},
                 status_code=401,
             )
+        bt.logging.info(f"JWT auth: Bearer token received for {request.url.path}")
         if not VALIDATOR_JWT_PUBLIC_KEY:
+            bt.logging.warning("JWT auth: server not configured (no public key); rejecting")
             return JSONResponse(
                 content={"detail": "Server auth not configured"},
                 status_code=503,
@@ -830,15 +838,22 @@ class JWTAuthMiddleware(BaseHTTPMiddleware):
                 algorithms=[VALIDATOR_JWT_ALGORITHM],
             )
             if payload.get("sub") != VALIDATOR_PROXY_SUB:
+                bt.logging.info(
+                    f"JWT auth: token rejected for {request.url.path} (invalid sub)"
+                )
                 return JSONResponse(
                     content={"detail": "Invalid or expired token"},
                     status_code=401,
                 )
         except jwt.InvalidTokenError:
+            bt.logging.info(
+                f"JWT auth: token rejected for {request.url.path} (invalid or expired)"
+            )
             return JSONResponse(
                 content={"detail": "Invalid or expired token"},
                 status_code=401,
             )
+        bt.logging.info(f"JWT auth: valid JWT accepted for {request.url.path}")
         return await call_next(request)
 
 
