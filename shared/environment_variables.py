@@ -32,7 +32,7 @@ def _load_jwt_public_key():
 
 
 VALIDATOR_JWT_PUBLIC_KEY = _load_jwt_public_key()
-VALIDATOR_JWT_ALGORITHM = os.environ.get("VALIDATOR_JWT_ALGORITHM", "RS256")
+VALIDATOR_JWT_ALGORITHM = os.environ.get("VALIDATOR_JWT_ALGORITHM", "RS512")
 
 INITIAL_WEIGHT = 0.7
 
