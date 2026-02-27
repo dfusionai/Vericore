@@ -112,7 +112,8 @@ async def main(url):
     snippet_fetcher = None
     try:
         snippet_fetcher = SnippetFetcher()
-        page_text, http_time_secs, selenium_time_secs = await snippet_fetcher.fetch_entire_page("abc", 1, url)
+        result = await snippet_fetcher.fetch_entire_page("abc", 1, url)
+        page_text = result.cleaned_html
         if page_text and len(page_text) > 0:
             success = True
         print(page_text)
@@ -144,8 +145,9 @@ async def main_all_urls():
 
             start = time.perf_counter()
             try:
-                page_text, http_time_secs, selenium_time_secs = await snippet_fetcher.fetch_entire_page(f"test-{i}", miner_uid, url)
+                fetch_result = await snippet_fetcher.fetch_entire_page(f"test-{i}", miner_uid, url)
                 duration = time.perf_counter() - start
+                page_text = fetch_result.cleaned_html
 
                 # Check if successful (has content)
                 if page_text and len(page_text) > 0:
@@ -153,8 +155,11 @@ async def main_all_urls():
                         'url': url,
                         'length': len(page_text),
                         'duration': duration,
-                        'snippet_fetcher_http_time_secs': http_time_secs,
-                        'snippet_fetcher_selenium_time_secs': selenium_time_secs
+                        'fetch_by_http_time_secs': fetch_result.fetch_by_http_time_secs,
+                        'fetch_by_selenium_time_secs': fetch_result.fetch_by_selenium_time_secs,
+                        'cleaning_html_time_secs': fetch_result.cleaning_html_time_secs,
+                        'fetch_by_http_status': fetch_result.fetch_by_http_status,
+                        'fetch_by_selenium_status': fetch_result.fetch_by_selenium_status,
                     })
                     print(f"\n{'='*80}")
                     print(f"✓ SUCCESS - {url}:")

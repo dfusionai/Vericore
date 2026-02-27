@@ -4,6 +4,65 @@ from dataclasses import dataclass, field
 
 import bittensor as bt
 
+# Snippet fetcher status constants (fetch-by-HTTP and fetch-by-Selenium)
+SNIPPET_FETCHER_STATUS_OK = "ok"
+SNIPPET_FETCHER_STATUS_ERROR = "error"
+SNIPPET_FETCHER_STATUS_NOT_RUN = "not_run"
+
+
+@dataclass
+class FetchPageResult:
+    """Result of fetching a page (HTTP and/or Selenium). Use constants for status fields.
+    All fields default to failure/not-run values so FetchPageResult() is a valid empty result.
+    """
+    cleaned_html: str = ""
+    fetch_by_http_time_secs: float = -1.0  # -1 if NA
+    fetch_by_selenium_time_secs: float = -1.0  # -1 if NA
+    cleaning_html_time_secs: float = -1.0  # -1 if not run
+    fetch_by_http_status: str = SNIPPET_FETCHER_STATUS_NOT_RUN  # SNIPPET_FETCHER_STATUS_*
+    fetch_by_selenium_status: str = SNIPPET_FETCHER_STATUS_NOT_RUN
+
+
+@dataclass
+class StatementResponseTiming:
+    """Timing and fetcher status for a single snippet validation."""
+    verify_miner_time_taken_secs: float = 0
+    fetch_page_time_taken_secs: float = 0
+    assess_statement_time_taken_secs: float = 0
+    fetch_by_http_time_secs: float = -1
+    fetch_by_selenium_time_secs: float = -1
+    snippet_fetcher_total_time_secs: float = -1
+    cleaning_html_time_taken_secs: float = -1
+    fetch_by_http_status: str = SNIPPET_FETCHER_STATUS_NOT_RUN
+    fetch_by_selenium_status: str = SNIPPET_FETCHER_STATUS_NOT_RUN
+
+
+@dataclass
+class MinerResponseTiming:
+    """Aggregated timing for a miner's response."""
+    elapsed_time: float = 0
+    total_fetch_time_secs: float = 0
+    total_ai_time_secs: float = 0
+    total_other_time_secs: float = 0
+    avg_snippet_time_secs: float = 0
+    max_snippet_time_secs: float = 0
+    snippet_count: int = 0
+
+
+@dataclass
+class QueryResponseTiming:
+    """Aggregated timing for a full query response."""
+    total_elapsed_time: float = 0
+    timestamp: float = 0
+    total_fetch_time_secs: float = 0
+    total_ai_time_secs: float = 0
+    total_other_time_secs: float = 0
+    avg_snippet_time_secs: float = 0
+    max_snippet_time_secs: float = 0
+    total_snippet_count: int = 0
+    miner_count: int = 0
+
+
 class SourceEvidence(typing.NamedTuple):
     """
     Container for a single piece of evidence from a miner.
@@ -54,9 +113,13 @@ class VericoreStatementResponse():
   verify_miner_time_taken_secs: float=0
   fetch_page_time_taken_secs: float=0  # Legacy: end-to-end fetch step time; prefer snippet_fetcher_* for breakdown
   assess_statement_time_taken_secs: float=0
-  snippet_fetcher_http_time_secs: float = -1  # HTTP request time from snippet fetcher; -1 if NA
-  snippet_fetcher_selenium_time_secs: float = -1  # Selenium fallback time from snippet fetcher; -1 if NA
+  snippet_fetcher_http_time_secs: float = -1  # HTTP request time from snippet fetcher; -1 if NA (legacy)
+  snippet_fetcher_selenium_time_secs: float = -1  # Selenium fallback time from snippet fetcher; -1 if NA (legacy)
   snippet_fetcher_total_time_secs: float = -1  # Total snippet fetcher time (http + selenium when both used); -1 if NA
+  cleaning_html_time_taken_secs: float = -1  # Time spent in clean_html; -1 if not run
+  fetch_by_http_status: str = SNIPPET_FETCHER_STATUS_NOT_RUN  # SNIPPET_FETCHER_STATUS_*
+  fetch_by_selenium_status: str = SNIPPET_FETCHER_STATUS_NOT_RUN  # SNIPPET_FETCHER_STATUS_*
+  timing: typing.Optional["StatementResponseTiming"] = None  # Nested timing DTO; legacy fields above kept for compatibility
   sentiment: float = 0.0
   conviction: float = 0.0
   source_credibility: float = 0.0
@@ -82,6 +145,7 @@ class VericoreMinerStatementResponse():
   avg_snippet_time_secs: float = 0
   max_snippet_time_secs: float = 0
   snippet_count: int = 0
+  timing: typing.Optional["MinerResponseTiming"] = None  # Nested timing DTO
 
 @dataclass
 class VericoreQueryResponse():
@@ -102,3 +166,4 @@ class VericoreQueryResponse():
   max_snippet_time_secs: float = 0
   total_snippet_count: int = 0
   miner_count: int = 0
+  timing: typing.Optional["QueryResponseTiming"] = None  # Nested timing DTO

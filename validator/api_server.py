@@ -24,6 +24,10 @@ from shared.veridex_protocol import (
     VericoreQueryResponse,
     VericoreStatementResponse,
     SourceEvidence,
+    StatementResponseTiming,
+    MinerResponseTiming,
+    QueryResponseTiming,
+    SNIPPET_FETCHER_STATUS_NOT_RUN,
 )
 from shared.scores import (
     UNREACHABLE_MINER_SCORE,
@@ -365,8 +369,9 @@ class APIQueryHandler:
                 )
 
             for ignored_miner_response in miner_response.synapse.veridex_response[MAX_MINER_RESPONSES:]:
+                timing = StatementResponseTiming()
                 vericore_statement_responses.append(
-                     VericoreStatementResponse(
+                    VericoreStatementResponse(
                         url=ignored_miner_response.url,
                         excerpt=ignored_miner_response.excerpt,
                         snippet_found=False,
@@ -374,6 +379,7 @@ class APIQueryHandler:
                         local_score=0.0,
                         snippet_score=0.0,
                         snippet_score_reason="too_many_snippets",
+                        timing=timing,
                     )
                 )
 
@@ -430,6 +436,15 @@ class APIQueryHandler:
             total_snippet = sum(snippet_times) if snippet_times else 0
             total_other = total_snippet - total_fetch - total_ai
 
+            miner_timing = MinerResponseTiming(
+                elapsed_time=miner_response.elapse_time,
+                total_fetch_time_secs=total_fetch,
+                total_ai_time_secs=total_ai,
+                total_other_time_secs=total_other,
+                avg_snippet_time_secs=sum(snippet_times) / len(snippet_times) if snippet_times else 0,
+                max_snippet_time_secs=max(snippet_times) if snippet_times else 0,
+                snippet_count=len(snippet_times),
+            )
             miner_statement = VericoreMinerStatementResponse(
                 miner_hotkey=miner_hotkey,
                 miner_uid=miner_uid,
@@ -445,6 +460,7 @@ class APIQueryHandler:
                 avg_snippet_time_secs=sum(snippet_times) / len(snippet_times) if snippet_times else 0,
                 max_snippet_time_secs=max(snippet_times) if snippet_times else 0,
                 snippet_count=len(snippet_times),
+                timing=miner_timing,
             )
             return miner_statement
         except Exception as e:
@@ -825,6 +841,18 @@ async def veridex_query(request: Request):
     ]
     result.avg_snippet_time_secs = sum(all_snippet_times) / len(all_snippet_times) if all_snippet_times else 0
     result.max_snippet_time_secs = max(all_snippet_times) if all_snippet_times else 0
+
+    result.timing = QueryResponseTiming(
+        total_elapsed_time=result.total_elapsed_time,
+        timestamp=result.timestamp,
+        total_fetch_time_secs=result.total_fetch_time_secs,
+        total_ai_time_secs=result.total_ai_time_secs,
+        total_other_time_secs=result.total_other_time_secs,
+        avg_snippet_time_secs=result.avg_snippet_time_secs,
+        max_snippet_time_secs=result.max_snippet_time_secs,
+        total_snippet_count=result.total_snippet_count,
+        miner_count=result.miner_count,
+    )
 
     # Log request-level performance summary
     bt.logging.info(
