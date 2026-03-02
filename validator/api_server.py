@@ -798,13 +798,16 @@ app.add_middleware(
 )
 
 
-# JWT auth: require Bearer token on all endpoints except /version
+# JWT auth: require Bearer token on all endpoints except /version and OPTIONS (CORS preflight)
 VALIDATOR_PROXY_SUB = "validator_proxy"
 
 
 class JWTAuthMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         if request.url.path == "/version":
+            return await call_next(request)
+        # OPTIONS preflight requests do not send Authorization; let them through so CORSMiddleware can respond
+        if request.method == "OPTIONS":
             return await call_next(request)
         auth = request.headers.get("Authorization")
         if not auth:
