@@ -75,7 +75,48 @@ Otherwise the reason is free-text from the AI model (e.g. why excerpt was classi
 
 ---
 
-## 5. Charts against veridex_protocol (for the miner)
+## 5. Veridex protocol (response shapes and timing)
+
+Types and constants are defined in [shared/veridex_protocol.py](../shared/veridex_protocol.py). The validator returns nested responses; timing and fetcher status are available both at top level (legacy) and in a `timing` object.
+
+### Snippet fetcher status constants
+
+Used for **fetch-by-HTTP** and **fetch-by-Selenium** status (Selenium is not always run; e.g. when HTTP succeeds):
+
+| Constant | Value | Meaning |
+|----------|--------|--------|
+| `SNIPPET_FETCHER_STATUS_OK` | `"ok"` | That fetch ran and returned usable content (e.g. HTTP 200 or Selenium fallback 200). |
+| `SNIPPET_FETCHER_STATUS_ERROR` | `"error"` | That fetch ran but failed (non-200, exception, or Selenium attempted and failed). |
+| `SNIPPET_FETCHER_STATUS_NOT_RUN` | `"not_run"` | That fetch was never invoked (e.g. Selenium not run when HTTP succeeded; or snippet fetcher not called for this snippet). |
+
+### Timing DTOs (nested under `timing`)
+
+- **StatementResponseTiming** — Per-snippet: `verify_miner_time_taken_secs`, `fetch_page_time_taken_secs`, `assess_statement_time_taken_secs`, `fetch_by_http_time_secs`, `fetch_by_selenium_time_secs`, `snippet_fetcher_total_time_secs`, `cleaning_html_time_taken_secs`, `fetch_by_http_status`, `fetch_by_selenium_status`.
+- **MinerResponseTiming** — Per-miner: `elapsed_time`, `total_fetch_time_secs`, `total_ai_time_secs`, `total_other_time_secs`, `avg_snippet_time_secs`, `max_snippet_time_secs`, `snippet_count`.
+- **QueryResponseTiming** — Per-query: `total_elapsed_time`, `timestamp`, `total_fetch_time_secs`, `total_ai_time_secs`, `total_other_time_secs`, `avg_snippet_time_secs`, `max_snippet_time_secs`, `total_snippet_count`, `miner_count`.
+
+Legacy timing fields remain at top level on each response; `timing` duplicates them in a single nested object for consumers that prefer a structured view.
+
+### VericoreStatementResponse (per-snippet)
+
+In addition to the fields in section 2, each snippet response includes:
+
+- **Legacy (top-level):** `verify_miner_time_taken_secs`, `fetch_page_time_taken_secs`, `assess_statement_time_taken_secs`, `snippet_fetcher_http_time_secs`, `snippet_fetcher_selenium_time_secs`, `snippet_fetcher_total_time_secs`, `cleaning_html_time_taken_secs`, `fetch_by_http_status`, `fetch_by_selenium_status`.
+- **timing:** `StatementResponseTiming` — same values as above, plus all timing/status in one object. Use `timing.fetch_by_http_status` / `timing.fetch_by_selenium_status` and `timing.cleaning_html_time_taken_secs` for fetch-by-HTTP/Selenium status and cleaning_html timing.
+
+### VericoreMinerStatementResponse (per-miner)
+
+- **Legacy (top-level):** `elapsed_time`, `total_fetch_time_secs`, `total_ai_time_secs`, `total_other_time_secs`, `avg_snippet_time_secs`, `max_snippet_time_secs`, `snippet_count`.
+- **timing:** `MinerResponseTiming` — same aggregated timing in one object.
+
+### VericoreQueryResponse (per-query)
+
+- **Legacy (top-level):** `timestamp`, `total_elapsed_time`, `total_fetch_time_secs`, `total_ai_time_secs`, `total_other_time_secs`, `avg_snippet_time_secs`, `max_snippet_time_secs`, `total_snippet_count`, `miner_count`.
+- **timing:** `QueryResponseTiming` — same query-level timing in one object.
+
+---
+
+## 6. Charts against veridex_protocol (for the miner)
 
 Charts that miners (or miner dashboards) can build using the protocol types in [shared/veridex_protocol.py](../shared/veridex_protocol.py).
 
@@ -85,8 +126,8 @@ Charts that miners (or miner dashboards) can build using the protocol types in [
 - **final_score vs elapsed_time** — Scatter: `final_score` (y) vs `elapsed_time` (x) to see speed–score tradeoff.
 - **raw_score vs speed_factor** — How much of `final_score` comes from content (`raw_score`) vs speed (`speed_factor`).
 - **snippet_count** — Distribution of `snippet_count` per request (how many snippets sent).
-- **Time breakdown** — Stacked bar or area: `total_fetch_time_secs`, `total_ai_time_secs`, `total_other_time_secs` per request (or averaged over time).
-- **avg_snippet_time_secs / max_snippet_time_secs** — Time series or distribution to spot slow snippets.
+- **Time breakdown** — Stacked bar or area: `total_fetch_time_secs`, `total_ai_time_secs`, `total_other_time_secs` per request (or use `timing` for the same values in one object).
+- **avg_snippet_time_secs / max_snippet_time_secs** — Time series or distribution to spot slow snippets (also in `timing`).
 
 ### Per-snippet (VericoreStatementResponse)
 
@@ -94,7 +135,8 @@ Charts that miners (or miner dashboards) can build using the protocol types in [
 - **snippet_found** — Proportion of snippets with `snippet_found=True` vs False.
 - **local_score vs snippet_score** — Scatter or box: effect of `domain_factor` and `approved_url_multiplier`.
 - **NLI probs** — Distribution of `contradiction`, `neutral`, `entailment` (e.g. small histograms or ternary) to see support/contradict mix.
-- **Timing** — `verify_miner_time_taken_secs` vs `snippet_fetcher_http_time_secs` / `snippet_fetcher_selenium_time_secs` / `snippet_fetcher_total_time_secs` to see fetch vs AI vs other.
+- **Timing** — Use top-level fields or `timing`: `verify_miner_time_taken_secs`, `fetch_page_time_taken_secs`, `assess_statement_time_taken_secs`, `fetch_by_http_time_secs`, `fetch_by_selenium_time_secs`, `snippet_fetcher_total_time_secs`, `cleaning_html_time_taken_secs` to see fetch vs AI vs cleaning_html vs other.
+- **Fetch-by status** — `fetch_by_http_status` and `fetch_by_selenium_status` (values: `ok`, `error`, `not_run`) to see when HTTP vs Selenium was used or failed; use `timing.fetch_by_http_status` / `timing.fetch_by_selenium_status` if reading from the nested object.
 - **Signals** — Optional: distributions of `sentiment`, `conviction`, `source_credibility`, `narrative_momentum`, `risk_reward_sentiment`, `catalyst_detection`, `political_leaning` for accepted snippets.
 
 ### Miner output (VericoreSynapse / SourceEvidence)
@@ -105,4 +147,4 @@ Charts that miners (or miner dashboards) can build using the protocol types in [
 
 ### Optional: request-level (VericoreQueryResponse)
 
-- If the miner sees query-level aggregates: **miner_count**, **total_snippet_count**, **total_elapsed_time** vs **total_fetch_time_secs** / **total_ai_time_secs** for context (e.g. validator-side totals).
+- If the miner sees query-level aggregates: **miner_count**, **total_snippet_count**, **total_elapsed_time** vs **total_fetch_time_secs** / **total_ai_time_secs** for context (e.g. validator-side totals). The same fields are available under **timing** (`QueryResponseTiming`) for a single nested object.

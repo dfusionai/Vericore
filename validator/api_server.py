@@ -9,14 +9,21 @@ from datetime import datetime
 from dataclasses import dataclass
 from typing import List
 from bittensor import NeuronInfo
+import jwt
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
 from contextlib import asynccontextmanager
 
 import bittensor as bt
 
-from shared.environment_variables import VERICORE_VALIDATOR_VERSION, IMMUNITY_PERIOD
+from shared.environment_variables import (
+    VERICORE_VALIDATOR_VERSION,
+    IMMUNITY_PERIOD,
+    VALIDATOR_JWT_PUBLIC_KEY,
+    VALIDATOR_JWT_ALGORITHM,
+)
 from shared.veridex_protocol import (
     VericoreSynapse,
     VeridexResponse,
@@ -24,6 +31,10 @@ from shared.veridex_protocol import (
     VericoreQueryResponse,
     VericoreStatementResponse,
     SourceEvidence,
+    StatementResponseTiming,
+    MinerResponseTiming,
+    QueryResponseTiming,
+    SNIPPET_FETCHER_STATUS_NOT_RUN,
 )
 from shared.scores import (
     UNREACHABLE_MINER_SCORE,
@@ -64,6 +75,19 @@ MIN_WEIGHT = 1.0  # Floor to give new miners a chance
 EXPLORATION_FACTOR = 0.1  # 10% exploration
 NEW_MINER_BONUS = 2.0
 
+
+def get_parser():
+    """Build argument parser with Bittensor and axon args (shared by get_config and __main__)."""
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--custom", default="my_custom_value", help="Custom value")
+    parser.add_argument("--netuid", type=int, default=1, help="Chain subnet uid")
+    bt.subtensor.add_args(parser)
+    bt.logging.add_args(parser)
+    bt.wallet.add_args(parser)
+    bt.axon.add_args(parser)
+    return parser
+
+
 @dataclass
 class MinerSelection:
     miner_uid: int
@@ -71,6 +95,7 @@ class MinerSelection:
     neuron_info: NeuronInfo
     scores: float
     request_count: int
+    is_miner: bool = True  # False for validators; only is_miner=True are sent requests
 
     def calculate_average_score(self) -> float:
         if self.request_count == 0:
@@ -103,13 +128,7 @@ class APIQueryHandler:
         os.makedirs(self.results_dir, exist_ok=True)
 
     def get_config(self):
-        parser = argparse.ArgumentParser()
-        parser.add_argument("--custom", default="my_custom_value", help="Custom value")
-        parser.add_argument("--netuid", type=int, default=1, help="Chain subnet uid")
-        bt.subtensor.add_args(parser)
-        bt.logging.add_args(parser)
-        bt.wallet.add_args(parser)
-        bt.axon.add_args(parser)
+        parser = get_parser()
         config = bt.config(parser)
 
         bt.logging.info(f"get_config: {config}")
@@ -357,8 +376,9 @@ class APIQueryHandler:
                 )
 
             for ignored_miner_response in miner_response.synapse.veridex_response[MAX_MINER_RESPONSES:]:
+                timing = StatementResponseTiming()
                 vericore_statement_responses.append(
-                     VericoreStatementResponse(
+                    VericoreStatementResponse(
                         url=ignored_miner_response.url,
                         excerpt=ignored_miner_response.excerpt,
                         snippet_found=False,
@@ -366,6 +386,7 @@ class APIQueryHandler:
                         local_score=0.0,
                         snippet_score=0.0,
                         snippet_score_reason="too_many_snippets",
+                        timing=timing,
                     )
                 )
 
@@ -422,6 +443,15 @@ class APIQueryHandler:
             total_snippet = sum(snippet_times) if snippet_times else 0
             total_other = total_snippet - total_fetch - total_ai
 
+            miner_timing = MinerResponseTiming(
+                elapsed_time=miner_response.elapse_time,
+                total_fetch_time_secs=total_fetch,
+                total_ai_time_secs=total_ai,
+                total_other_time_secs=total_other,
+                avg_snippet_time_secs=sum(snippet_times) / len(snippet_times) if snippet_times else 0,
+                max_snippet_time_secs=max(snippet_times) if snippet_times else 0,
+                snippet_count=len(snippet_times),
+            )
             miner_statement = VericoreMinerStatementResponse(
                 miner_hotkey=miner_hotkey,
                 miner_uid=miner_uid,
@@ -437,6 +467,7 @@ class APIQueryHandler:
                 avg_snippet_time_secs=sum(snippet_times) / len(snippet_times) if snippet_times else 0,
                 max_snippet_time_secs=max(snippet_times) if snippet_times else 0,
                 snippet_count=len(snippet_times),
+                timing=miner_timing,
             )
             return miner_statement
         except Exception as e:
@@ -589,7 +620,6 @@ class APIQueryHandler:
 
     def loading_miners(self, neurons: List[NeuronInfo]):
         bt.logging.info(f"{self.my_uid} | {self.my_uid} | Loading Miners")
-        # return [n for n in neurons if not n.validator_permit]
         if self.miner_cache is None or len(self.miner_cache) == 0:
             bt.logging.info(f"{self.my_uid} | {self.my_uid} | Loading brand new miners")
             return [
@@ -598,13 +628,13 @@ class APIQueryHandler:
                     miner_hotkey=neuron.hotkey,
                     neuron_info=neuron,
                     scores=0,
-                    request_count=0
+                    request_count=0,
+                    is_miner=not neuron.validator_permit,
                 )
                 for index, neuron in enumerate(neurons)
             ]
 
         bt.logging.info(f"{self.my_uid} | Checking new miners have been loaded ")
-        # Loop through cache and see whether the hotkey is the same as the neuron
         miner_cache_length = len(self.miner_cache)
         new_miner_cache = list(self.miner_cache)
         for index, neuron in enumerate(neurons):
@@ -616,6 +646,7 @@ class APIQueryHandler:
                     miner_cache.scores = 0
                     miner_cache.request_count = 0
 
+                miner_cache.is_miner = not neuron.validator_permit
                 # Always update neuron_info with fresh chain data
                 miner_cache.neuron_info = neuron
             else:
@@ -625,7 +656,8 @@ class APIQueryHandler:
                     miner_hotkey=neuron.hotkey,
                     neuron_info=neuron,
                     scores=0,
-                    request_count=0
+                    request_count=0,
+                    is_miner=not neuron.validator_permit,
                 )
                 new_miner_cache.append(miner_selection)
 
@@ -685,7 +717,8 @@ class APIQueryHandler:
 
         bt.logging.info(f"{self.my_uid} | Selecting miner subset")
 
-        all_miners = self.miner_cache
+        # Only consider miners (exclude validators) for sending requests
+        all_miners = [m for m in self.miner_cache if m.is_miner]
 
         if len(all_miners) <= number_of_miners:
             return all_miners
@@ -695,11 +728,11 @@ class APIQueryHandler:
 
         bt.logging.info(f"{self.my_uid} | Weights calculated for miners")
 
-        # select the miners index  based on the weights
-        selected_miner_indexes = self.select_miner(weighted_miners, number_of_miners)
+        # select the miners by uid based on the weights
+        selected_miner_uids = self.select_miner(weighted_miners, number_of_miners)
 
-        # get all the miners for the selected indexes
-        selected_miners =  [all_miners[i] for i in selected_miner_indexes]
+        # get MinerSelection for each selected uid (weighted_miners are (miner_uid, weight))
+        selected_miners = [next(m for m in all_miners if m.miner_uid == uid) for uid in selected_miner_uids]
 
         null_miners = [miner for miner in selected_miners if miner.neuron_info.axon_info is None or not miner.neuron_info.axon_info.is_serving]
 
@@ -712,18 +745,18 @@ class APIQueryHandler:
             for i, null_miner in enumerate(null_miners):
                 if available_replacement_ids:
                     available_replacements = [weighted_miner for weighted_miner in weighted_miners if weighted_miner[0] in available_replacement_ids]
-                    replacement_miner_indexes = self.select_miner(available_replacements, 1)
-                    if len(replacement_miner_indexes) != 0:
-                        replacement_miner_id = replacement_miner_indexes[0]
-                        selected_miner_indexes.append(replacement_miner_id)
-                        available_replacement_ids.remove(replacement_miner_id)
+                    replacement_miner_uids = self.select_miner(available_replacements, 1)
+                    if len(replacement_miner_uids) != 0:
+                        replacement_miner_uid = replacement_miner_uids[0]
+                        selected_miner_uids.append(replacement_miner_uid)
+                        available_replacement_ids.remove(replacement_miner_uid)
                 else:
                     break
 
-        bt.logging.info(f"{self.my_uid} | Selected {len(selected_miner_indexes)} miners with {len(null_miners)} null axons")
+        bt.logging.info(f"{self.my_uid} | Selected {len(selected_miner_uids)} miners with {len(null_miners)} null axons")
 
         # recalculate all miners to be returned
-        selected_miners =  [all_miners[i] for i in selected_miner_indexes]
+        selected_miners = [next(m for m in all_miners if m.miner_uid == uid) for uid in selected_miner_uids]
 
         return selected_miners
 
@@ -764,8 +797,122 @@ app.add_middleware(
     allow_headers=["*"],  # Allow all headers
 )
 
+
+# JWT auth: require Bearer token on all endpoints except /version and OPTIONS (CORS preflight)
+VALIDATOR_PROXY_SUB = "validator_proxy"
+
+
+class JWTAuthMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        if request.url.path == "/version":
+            return await call_next(request)
+        # OPTIONS preflight requests do not send Authorization; let them through so CORSMiddleware can respond
+        if request.method == "OPTIONS":
+            return await call_next(request)
+        auth = request.headers.get("Authorization")
+        if not auth:
+            bt.logging.warning(
+                f"JWT auth: 401 for {request.url.path} — Authorization header missing"
+            )
+            return JSONResponse(
+                content={"detail": "Missing or invalid Authorization"},
+                status_code=401,
+            )
+        if not auth.startswith("Bearer "):
+            bt.logging.warning(
+                f"JWT auth: 401 for {request.url.path} — Authorization header present but not Bearer (prefix: {auth[:20]!r}...)"
+            )
+            return JSONResponse(
+                content={"detail": "Missing or invalid Authorization"},
+                status_code=401,
+            )
+        token = auth[7:].strip()
+        if not token:
+            bt.logging.warning(
+                f"JWT auth: 401 for {request.url.path} — Bearer scheme with empty token"
+            )
+            return JSONResponse(
+                content={"detail": "Missing or invalid Authorization"},
+                status_code=401,
+            )
+        bt.logging.info(
+            f"JWT auth: Bearer token received for {request.url.path} (token length={len(token)})"
+        )
+        if not VALIDATOR_JWT_PUBLIC_KEY:
+            bt.logging.warning("JWT auth: 503 — server not configured (no public key); rejecting")
+            return JSONResponse(
+                content={"detail": "Server auth not configured"},
+                status_code=503,
+            )
+        try:
+            payload = jwt.decode(
+                token,
+                VALIDATOR_JWT_PUBLIC_KEY,
+                algorithms=[VALIDATOR_JWT_ALGORITHM],
+            )
+            if payload.get("sub") != VALIDATOR_PROXY_SUB:
+                bt.logging.warning(
+                    f"JWT auth: 401 for {request.url.path} — invalid sub: got {payload.get('sub')!r}, expected {VALIDATOR_PROXY_SUB!r}"
+                )
+                return JSONResponse(
+                    content={"detail": "Invalid or expired token"},
+                    status_code=401,
+                )
+        except jwt.ExpiredSignatureError as e:
+            bt.logging.warning(
+                f"JWT auth: 401 for {request.url.path} — token expired: {e}"
+            )
+            return JSONResponse(
+                content={"detail": "Invalid or expired token"},
+                status_code=401,
+            )
+        except jwt.InvalidSignatureError as e:
+            bt.logging.warning(
+                f"JWT auth: 401 for {request.url.path} — invalid signature (wrong key or tampered): {e}"
+            )
+            return JSONResponse(
+                content={"detail": "Invalid or expired token"},
+                status_code=401,
+            )
+        except jwt.InvalidAlgorithmError as e:
+            bt.logging.warning(
+                f"JWT auth: 401 for {request.url.path} — algorithm not allowed: {e}. "
+                f"For RS256/RS384/RS512 ensure 'cryptography' is installed (pip install cryptography)."
+            )
+            return JSONResponse(
+                content={"detail": "Invalid or expired token"},
+                status_code=401,
+            )
+        except jwt.DecodeError as e:
+            bt.logging.warning(
+                f"JWT auth: 401 for {request.url.path} — decode error: {e}"
+            )
+            return JSONResponse(
+                content={"detail": "Invalid or expired token"},
+                status_code=401,
+            )
+        except jwt.InvalidTokenError as e:
+            bt.logging.warning(
+                f"JWT auth: 401 for {request.url.path} — {type(e).__name__}: {e}"
+            )
+            return JSONResponse(
+                content={"detail": "Invalid or expired token"},
+                status_code=401,
+            )
+        bt.logging.info(f"JWT auth: valid JWT accepted for {request.url.path}")
+        return await call_next(request)
+
+
+app.add_middleware(JWTAuthMiddleware)
+
+
 # Create the APIQueryHandler during startup and store it in app.state.
 async def startup_event():
+    if not VALIDATOR_JWT_PUBLIC_KEY:
+        bt.logging.warning(
+            "JWT public key not set (set VALIDATOR_JWT_PUBLIC_KEY or "
+            "VALIDATOR_JWT_PUBLIC_KEY_FILE); protected endpoints will return 503."
+        )
     print("startup_event")
     app.state.handler = APIQueryHandler()
     print("APIQueryHandler instance created at startup.")
@@ -808,14 +955,26 @@ async def veridex_query(request: Request):
     result.total_other_time_secs = sum(m.total_other_time_secs for m in result.results)
 
     all_snippet_times = [
-        r.verify_miner_time_taken_secs 
-        for m in result.results 
-        for r in m.vericore_responses 
+        r.verify_miner_time_taken_secs
+        for m in result.results
+        for r in m.vericore_responses
         if r.verify_miner_time_taken_secs > 0
     ]
     result.avg_snippet_time_secs = sum(all_snippet_times) / len(all_snippet_times) if all_snippet_times else 0
     result.max_snippet_time_secs = max(all_snippet_times) if all_snippet_times else 0
-    
+
+    result.timing = QueryResponseTiming(
+        total_elapsed_time=result.total_elapsed_time,
+        timestamp=result.timestamp,
+        total_fetch_time_secs=result.total_fetch_time_secs,
+        total_ai_time_secs=result.total_ai_time_secs,
+        total_other_time_secs=result.total_other_time_secs,
+        avg_snippet_time_secs=result.avg_snippet_time_secs,
+        max_snippet_time_secs=result.max_snippet_time_secs,
+        total_snippet_count=result.total_snippet_count,
+        miner_count=result.miner_count,
+    )
+
     # Log request-level performance summary
     bt.logging.info(
         f"{request_id} | Request complete | Duration: {duration:.3f}s | Miners: {result.miner_count} | "
@@ -829,11 +988,15 @@ async def veridex_query(request: Request):
 if __name__ == "__main__":
     import uvicorn
 
+    parser = get_parser()
+    parser.add_argument("--port", type=int, default=8080, help="Port to bind (default: 8080)")
+    args = parser.parse_args()
+
     # Run uvicorn with one worker to ensure a single instance of APIQueryHandler.
     uvicorn.run(
         "validator.api_server:app",
         host="0.0.0.0",
-        port=8080,
+        port=args.port,
         reload=False,
         timeout_keep_alive=500,
         workers=1,
