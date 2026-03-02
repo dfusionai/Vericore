@@ -543,6 +543,17 @@ class SnippetFetcher:
 
             if response is None or response.status_code != 200:
                 bt.logging.error(f"{request_id} | {miner_uid} | {url} | Error occurred | Returning empty html : {response}")
+                if response is not None:
+                    http_time_secs = getattr(response, "http_time_secs", "NA")
+                    selenium_time_secs = getattr(response, "selenium_time_secs", "NA")
+                    http_status = getattr(response, "http_status", SNIPPET_FETCHER_STATUS_ERROR)
+                    selenium_status = getattr(response, "selenium_status", SNIPPET_FETCHER_STATUS_NOT_RUN)
+                    return FetchPageResult(
+                        fetch_by_http_time_secs=self._time_to_float(http_time_secs),
+                        fetch_by_selenium_time_secs=self._time_to_float(selenium_time_secs),
+                        fetch_by_http_status=http_status,
+                        fetch_by_selenium_status=selenium_status,
+                    )
                 return FetchPageResult(fetch_by_http_status=SNIPPET_FETCHER_STATUS_ERROR)
 
             http_time_secs = getattr(response, "http_time_secs", "NA")
