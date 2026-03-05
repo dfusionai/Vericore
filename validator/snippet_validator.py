@@ -42,7 +42,9 @@ from shared.scores import (
     UNRELATED_PAGE_SNIPPET,
     BLACKLISTED_URL_SCORE,
     INVALID_SNIPPET_EXCERPT,
-    IS_SEARCH_WEB_PAGE, FAKE_SNIPPET
+    IS_SEARCH_WEB_PAGE,
+    FAKE_SNIPPET,
+    DESEARCH_SNIPPET_BONUS,
 )
 from validator.statement_context_evaluator import assess_statement_async
 from validator.web_page_validator import is_search_web_page
@@ -421,12 +423,28 @@ class SnippetValidator:
         #
         return True
 
+    def _evidence_in_desearch_response(
+        self, url: str, excerpt: str, response_body: bytes
+    ) -> bool:
+        """Check if url and excerpt are present in the Desearch response body (text or JSON)."""
+        try:
+            text = response_body.decode("utf-8", errors="replace")
+            if url and url not in text:
+                return False
+            if excerpt and excerpt.strip() and excerpt.strip() not in text:
+                return False
+            return True
+        except Exception:
+            return False
+
     async def validate_miner_snippet(
         self,
         request_id: str,
         miner_uid: int,
         original_statement: str,
-        miner_evidence: SourceEvidence
+        miner_evidence: SourceEvidence,
+        desearch_proof_valid: bool | None = None,
+        desearch_response_body: bytes | None = None,
     ) -> VericoreStatementResponse:
         start_time = time.perf_counter()
 
@@ -434,6 +452,56 @@ class SnippetValidator:
             f"{request_id} | {miner_uid} | {miner_evidence.url} | Verifying miner snippet"
         )
         try:
+            # Desearch: require valid proof and evidence-from-body when source_type is desearch
+            source_type = getattr(miner_evidence, "source_type", "web")
+            if source_type == "desearch":
+                verify_secs = time.perf_counter() - start_time
+                if desearch_proof_valid is not True:
+                    return VericoreStatementResponse(
+                        url=miner_evidence.url,
+                        excerpt=miner_evidence.excerpt,
+                        domain="",
+                        snippet_found=False,
+                        local_score=0.0,
+                        snippet_score=0.0,
+                        snippet_score_reason="desearch_proof_invalid",
+                        verify_miner_time_taken_secs=verify_secs,
+                        timing=StatementResponseTiming(
+                            verify_miner_time_taken_secs=verify_secs,
+                        ),
+                    )
+                if not desearch_response_body:
+                    return VericoreStatementResponse(
+                        url=miner_evidence.url,
+                        excerpt=miner_evidence.excerpt,
+                        domain="",
+                        snippet_found=False,
+                        local_score=0.0,
+                        snippet_score=0.0,
+                        snippet_score_reason="desearch_proof_invalid",
+                        verify_miner_time_taken_secs=verify_secs,
+                        timing=StatementResponseTiming(
+                            verify_miner_time_taken_secs=verify_secs,
+                        ),
+                    )
+                if not self._evidence_in_desearch_response(
+                    miner_evidence.url, miner_evidence.excerpt, desearch_response_body
+                ):
+                    return VericoreStatementResponse(
+                        url=miner_evidence.url,
+                        excerpt=miner_evidence.excerpt,
+                        domain="",
+                        snippet_found=False,
+                        local_score=0.0,
+                        snippet_score=0.0,
+                        snippet_score_reason="desearch_evidence_not_in_response",
+                        verify_miner_time_taken_secs=verify_secs,
+                        timing=StatementResponseTiming(
+                            verify_miner_time_taken_secs=verify_secs,
+                        ),
+                    )
+                # Proof valid and evidence in body: continue to normal validation; we will add DESEARCH_SNIPPET_BONUS at the end
+
             try:
                 domain = self._extract_domain(miner_evidence.url)
             except InsecureProtocolError:
@@ -852,6 +920,7 @@ class SnippetValidator:
             end_time = time.perf_counter()
             signals = self._extract_assessment_signals(assessment_result) if assessment_result else self._extract_assessment_signals({})
             verify_secs = end_time - start_time
+            desearch_bonus = DESEARCH_SNIPPET_BONUS if source_type == "desearch" else 0.0
             vericore_miner_response = VericoreStatementResponse(
                 url=miner_evidence.url,
                 excerpt=miner_evidence.excerpt,
@@ -890,6 +959,7 @@ class SnippetValidator:
                     fetch_result.cleaning_html_time_secs,
                     fetch_result.fetch_by_http_status, fetch_result.fetch_by_selenium_status,
                 ),
+                desearch_bonus=desearch_bonus,
             )
             total_time = end_time - start_time
             other_time = total_time - fetch_page_time_taken_secs - assess_statement_time_taken_secs
@@ -929,11 +999,15 @@ async def run_validate_miner_snippet(
     request_id: str,
     miner_uid: int,
     original_statement: str,
-    miner_evidence: SourceEvidence
+    miner_evidence: SourceEvidence,
+    desearch_proof_valid: bool | None = None,
+    desearch_response_body: bytes | None = None,
 ) -> VericoreStatementResponse:
     return await validator.validate_miner_snippet(
         request_id,
         miner_uid,
         original_statement,
-        miner_evidence
+        miner_evidence,
+        desearch_proof_valid=desearch_proof_valid,
+        desearch_response_body=desearch_response_body,
     )

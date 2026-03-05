@@ -21,3 +21,8 @@ DOMAIN_REGISTERED_RECENTLY = -1
 
 # Gaming responses
 SNIPPET_SAME_AS_STATEMENT = -10
+
+# Desearch
+DESEARCH_SNIPPET_BONUS = 1  # Extra point per verified Desearch snippet
+DESEARCH_PROOF_INVALID = 0  # Score/reason when proof verification fails
+DESEARCH_PROOF_EXPIRED = 0  # Score/reason when proof is expired

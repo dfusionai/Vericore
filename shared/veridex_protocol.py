@@ -66,9 +66,27 @@ class QueryResponseTiming:
 class SourceEvidence(typing.NamedTuple):
     """
     Container for a single piece of evidence from a miner.
+    source_type: "web" or "desearch" (default "web" for backward compatibility).
     """
     url: str
     excerpt: str = ""  # The snippet text the miner claims is from the URL
+    source_type: str = "web"  # "web" | "desearch"
+
+
+@dataclass
+class DesearchProof:
+    """Proof headers from Desearch API response (X-Proof-Signature, X-Proof-Timestamp, X-Proof-Expiry)."""
+    signature: str = ""  # hex
+    timestamp: str = ""
+    expiry: str = ""
+
+
+@dataclass
+class Desearch:
+    """Full Desearch response on the synapse: body (base64) and proof from response headers."""
+    response_body: str = ""  # base64-encoded full Desearch response body
+    proof: DesearchProof = field(default_factory=DesearchProof)
+
 
 class VericoreSynapse(bt.Synapse):
     """
@@ -84,6 +102,7 @@ class VericoreSynapse(bt.Synapse):
     statement: str
     sources: typing.List[str] = []
     veridex_response: typing.Optional[typing.List[SourceEvidence]] = None
+    desearch: typing.Optional[Desearch] = None  # When miner used Desearch: body + proof from response headers
 
 @dataclass
 class VeridexResponse:
@@ -127,6 +146,7 @@ class VericoreStatementResponse():
   risk_reward_sentiment: float = 0.0
   catalyst_detection: float = 0.0
   political_leaning: float = 0.0
+  desearch_bonus: float = 0.0  # DESEARCH_SNIPPET_BONUS when snippet received Desearch bonus, else 0
 
 @dataclass
 class VericoreMinerStatementResponse():
@@ -146,6 +166,7 @@ class VericoreMinerStatementResponse():
   max_snippet_time_secs: float = 0
   snippet_count: int = 0
   timing: typing.Optional["MinerResponseTiming"] = None  # Nested timing DTO
+  desearch_bonus: float = 0.0  # Sum of desearch_bonus across vericore_responses
 
 @dataclass
 class VericoreQueryResponse():

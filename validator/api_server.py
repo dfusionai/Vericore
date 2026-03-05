@@ -1,3 +1,4 @@
+import base64
 import os
 import time
 import random
@@ -31,16 +32,19 @@ from shared.veridex_protocol import (
     VericoreQueryResponse,
     VericoreStatementResponse,
     SourceEvidence,
+    Desearch,
     StatementResponseTiming,
     MinerResponseTiming,
     QueryResponseTiming,
     SNIPPET_FETCHER_STATUS_NOT_RUN,
 )
+from shared.desearch_proof import verify_proof
 from shared.scores import (
     UNREACHABLE_MINER_SCORE,
     INVALID_RESPONSE_MINER_SCORE,
     NO_STATEMENTS_PROVIDED_SCORE,
-    DUPLICATE_EXACT_MINER_STATEMENTS
+    DUPLICATE_EXACT_MINER_STATEMENTS,
+    DESEARCH_SNIPPET_BONUS,
 )
 from shared.log_data import LoggerType
 from shared.proxy_log_handler import register_proxy_log_handler
@@ -266,6 +270,37 @@ class APIQueryHandler:
             )
             return miner_statement
 
+        # If any evidence is from Desearch, require synapse.desearch with full proof
+        has_desearch = any(
+            getattr(ev, "source_type", "web") == "desearch" for ev in veridex_responses
+        )
+        if has_desearch:
+            desearch = getattr(miner_response.synapse, "desearch", None)
+            if not desearch or not desearch.response_body or not desearch.proof:
+                bt.logging.warning(
+                    f"{self.my_uid} | {request_id} | {miner_uid} | Desearch evidence but synapse.desearch missing or incomplete"
+                )
+                miner_statement = VericoreMinerStatementResponse(
+                    miner_hotkey=miner_hotkey,
+                    miner_uid=miner_uid,
+                    status="desearch_proof_missing",
+                    raw_score=INVALID_RESPONSE_MINER_SCORE,
+                    final_score=INVALID_RESPONSE_MINER_SCORE,
+                )
+                return miner_statement
+            if not (desearch.proof.signature and desearch.proof.timestamp and desearch.proof.expiry):
+                bt.logging.warning(
+                    f"{self.my_uid} | {request_id} | {miner_uid} | Desearch proof fields incomplete"
+                )
+                miner_statement = VericoreMinerStatementResponse(
+                    miner_hotkey=miner_hotkey,
+                    miner_uid=miner_uid,
+                    status="desearch_proof_incomplete",
+                    raw_score=INVALID_RESPONSE_MINER_SCORE,
+                    final_score=INVALID_RESPONSE_MINER_SCORE,
+                )
+                return miner_statement
+
         # Valid statements returned
         return None
 
@@ -352,13 +387,43 @@ class APIQueryHandler:
             # Process Vericore response data
             bt.logging.info(f"{self.my_uid} | {request_id} | {miner_uid} | Verifying Miner Statements. Received {len(miner_response.synapse.veridex_response)} responses. Only Processing {MAX_MINER_RESPONSES}")
 
+            # Desearch: verify proof once per synapse and pass result to snippet validation
+            desearch_proof_valid = None
+            desearch_response_body_bytes = None
+            desearch_obj = getattr(miner_response.synapse, "desearch", None)
+            if desearch_obj and desearch_obj.response_body and desearch_obj.proof:
+                try:
+                    coldkey = ""
+                    if hasattr(self.metagraph, "coldkeys") and miner_uid < len(self.metagraph.coldkeys):
+                        coldkey = self.metagraph.coldkeys[miner_uid]
+                    else:
+                        neuron = self.metagraph.neurons[miner_uid]
+                        coldkey = getattr(neuron, "coldkey", "") or ""
+                    if coldkey:
+                        desearch_response_body_bytes = base64.b64decode(desearch_obj.response_body)
+                        desearch_proof_valid = verify_proof(
+                            coldkey=coldkey,
+                            response_body=desearch_response_body_bytes,
+                            signature_hex=desearch_obj.proof.signature,
+                            timestamp=desearch_obj.proof.timestamp,
+                            expiry=desearch_obj.proof.expiry,
+                        )
+                    else:
+                        desearch_proof_valid = False
+                        bt.logging.warning(f"{self.my_uid} | {request_id} | {miner_uid} | No coldkey for miner, Desearch proof invalid")
+                except Exception as e:
+                    bt.logging.warning(f"{self.my_uid} | {request_id} | {miner_uid} | Desearch proof verification failed: {e}")
+                    desearch_proof_valid = False
+
             # Create tasks
             tasks = [
                 run_validate_miner_snippet(
                     request_id=request_id,
                     miner_uid=miner_uid,
                     original_statement=statement,
-                    miner_evidence=miner_vericore_response
+                    miner_evidence=miner_vericore_response,
+                    desearch_proof_valid=desearch_proof_valid,
+                    desearch_response_body=desearch_response_body_bytes,
                 ) for miner_vericore_response in miner_response.synapse.veridex_response[:MAX_MINER_RESPONSES]
             ]
 
@@ -418,6 +483,10 @@ class APIQueryHandler:
                         statement_response.approved_url_multiplier
                     )
                     statement_response.domain_factor = domain_factor
+                    # Desearch bonus per snippet
+                    statement_response.snippet_score += getattr(
+                        statement_response, "desearch_bonus", 0
+                    )
 
                 # Add score of all snippets
                 sum_of_snippets += statement_response.snippet_score
@@ -452,6 +521,7 @@ class APIQueryHandler:
                 max_snippet_time_secs=max(snippet_times) if snippet_times else 0,
                 snippet_count=len(snippet_times),
             )
+            total_desearch_bonus = sum(getattr(r, "desearch_bonus", 0) for r in vericore_statement_responses)
             miner_statement = VericoreMinerStatementResponse(
                 miner_hotkey=miner_hotkey,
                 miner_uid=miner_uid,
@@ -468,6 +538,7 @@ class APIQueryHandler:
                 max_snippet_time_secs=max(snippet_times) if snippet_times else 0,
                 snippet_count=len(snippet_times),
                 timing=miner_timing,
+                desearch_bonus=total_desearch_bonus,
             )
             return miner_statement
         except Exception as e:

@@ -155,6 +155,39 @@ or on Windows
 $env:PERPLEXICA_URL="<your_perplexica_url>"
 ```
 
+#### Desearch Miner
+
+**Desearch** can be used as a search source. Miners receive a bonus per verified Desearch snippet. You must bind your miner coldkey to your Desearch account and use the Desearch API with proof headers.
+
+- **API reference for miners:** [https://desearch.ai/docs/api-reference](https://desearch.ai/docs/api-reference)
+- **Environment variables:** Set `DESEARCH_API_KEY` (required). Optionally set `DESEARCH_BASE_URL` (default `https://api.desearch.ai`).
+
+**Coldkey binding (required):** Miners must bind their Bittensor coldkey to their Desearch account (similar to SN6). The validator uses the miner's coldkey from the metagraph to verify proof; if you use another miner's coldkey in requests, the signature will not match. To bind: register on Desearch with an email, then run the one-time link (see below). After linking, all API calls are tied to that coldkey.
+
+**One-time link (bind coldkey to Desearch account):** POST to `https://api.desearch.ai/bt/miner/link` with your API key and a signature of the API key with your coldkey private key:
+
+```python
+import requests
+from bittensor_wallet import Wallet
+
+API_KEY = "YOUR_DESEARCH_API_KEY"
+WALLET_NAME = "my_wallet"
+WALLET_PASSWORD = "my_password"
+
+wallet = Wallet(name=WALLET_NAME)
+keypair = wallet.get_coldkey(WALLET_PASSWORD)
+coldkey_ss58 = keypair.ss58_address
+
+signature_bytes = keypair.sign(API_KEY.encode("utf-8"))
+signature_hex = signature_bytes.hex()
+
+headers = {"Authorization": f"Bearer {API_KEY}", "Content-Type": "application/json"}
+payload = {"coldkey_ss58": coldkey_ss58, "signature_hex": signature_hex}
+response = requests.post("https://api.desearch.ai/bt/miner/link", json=payload, headers=headers)
+```
+
+**Request headers when calling Desearch:** Use `Authorization: Bearer <API_KEY>` and `X-Coldkey: <your_coldkey_ss58>`. The response includes proof headers: `X-Proof-Signature`, `X-Proof-Timestamp`, `X-Proof-Expiry`. The example miner in `miner/desearch/miner.py` sets `synapse.desearch` from the response body (base64) and these headers, and builds evidence with `source_type="desearch"`.
+
 ## Running the Miner
 
 In one terminal window, navigate to the project directory and run:
