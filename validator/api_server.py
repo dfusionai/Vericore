@@ -205,7 +205,7 @@ class APIQueryHandler:
         response = await self.dendrite.call(
             target_axon=target_axon, synapse=synapse, timeout=120, deserialize=True
         )
-        bt.logging.info(f"{self.my_uid} | {request_id} | {miner_uid} | Called axon {target_axon.hotkey} | Received response {response}")
+        bt.logging.info(f"{self.my_uid} | {request_id} | {miner_uid} | Called axon {target_axon.hotkey} ")
         end_time = time.time()
         elapsed = end_time - start_time + 1e-9
         veridex_response: VeridexResponse = VeridexResponse(
