@@ -1,6 +1,7 @@
 # veridex_protocol.py
 import typing
 from dataclasses import dataclass, field
+from enum import Enum
 
 import bittensor as bt
 
@@ -63,14 +64,20 @@ class QueryResponseTiming:
     miner_count: int = 0
 
 
+class SourceType(str, Enum):
+    """Source type for evidence. Wire format is the string value."""
+    WEB = "web"
+    DESEARCH = "desearch"
+
+
 class SourceEvidence(typing.NamedTuple):
     """
     Container for a single piece of evidence from a miner.
-    source_type: "web" or "desearch" (default "web" for backward compatibility).
+    source_type: SourceType.WEB or SourceType.DESEARCH (wire format: "web" | "desearch").
     """
     url: str
     excerpt: str = ""  # The snippet text the miner claims is from the URL
-    source_type: str = "web"  # "web" | "desearch"
+    source_type: str = "web"  # SourceType.WEB.value | SourceType.DESEARCH.value
 
 
 @dataclass
@@ -102,7 +109,7 @@ class VericoreSynapse(bt.Synapse):
     statement: str
     sources: typing.List[str] = []
     veridex_response: typing.Optional[typing.List[SourceEvidence]] = None
-    desearch: typing.Optional[Desearch] = None  # When miner used Desearch: body + proof from response headers
+    desearch: typing.Optional[typing.List[Desearch]] = None
 
 @dataclass
 class VeridexResponse:
@@ -146,7 +153,7 @@ class VericoreStatementResponse():
   risk_reward_sentiment: float = 0.0
   catalyst_detection: float = 0.0
   political_leaning: float = 0.0
-  desearch_bonus: float = 0.0  # DESEARCH_SNIPPET_BONUS when snippet received Desearch bonus, else 0
+  social_bonus_contribution: float = 0.0  # This excerpt's contribution to miner social_bonus_score (0, 0.5, or 1.0)
 
 @dataclass
 class VericoreMinerStatementResponse():
@@ -166,7 +173,8 @@ class VericoreMinerStatementResponse():
   max_snippet_time_secs: float = 0
   snippet_count: int = 0
   timing: typing.Optional["MinerResponseTiming"] = None  # Nested timing DTO
-  desearch_bonus: float = 0.0  # Sum of desearch_bonus across vericore_responses
+  desearch_bonus_score: float = 0.0  # Miner-level desearch proof bonus/penalty
+  social_bonus_score: float = 0.0  # Sum of per-snippet social bonus (desearch only: x.com +1, reddit.com +0.5)
 
 @dataclass
 class VericoreQueryResponse():

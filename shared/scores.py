@@ -22,7 +22,14 @@ DOMAIN_REGISTERED_RECENTLY = -1
 # Gaming responses
 SNIPPET_SAME_AS_STATEMENT = -10
 
-# Desearch
-DESEARCH_SNIPPET_BONUS = 1  # Extra point per verified Desearch snippet
-DESEARCH_PROOF_INVALID = 0  # Score/reason when proof verification fails
-DESEARCH_PROOF_EXPIRED = 0  # Score/reason when proof is expired
+# Desearch (miner-level, applied once per miner response)
+DESEARCH_PROOF_VALID_BONUS = 2
+DESEARCH_PROOF_INVALID_PENALTY = -5
+# Desearch snippet: evidence URL/excerpt not found in response body
+DESEARCH_EVIDENCE_NOT_IN_RESPONSE = -1
+
+# Social bonus (per desearch snippet only): x.com → +1, reddit.com → +0.5
+SOCIAL_BONUS_DOMAIN_X = 1.0
+SOCIAL_BONUS_DOMAIN_REDDIT = 0.5
+SOCIAL_BONUS_DOMAINS_X = ("x.com", "twitter.com")  # domains that receive SOCIAL_BONUS_DOMAIN_X
+SOCIAL_BONUS_DOMAIN_REDDIT_NAME = "reddit.com"

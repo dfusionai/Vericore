@@ -72,8 +72,14 @@ def main() -> int:
     synapse = VericoreSynapse(statement=args.statement, request_id=args.request_id)
     miner.veridex_forward(synapse)
 
-    desearch = getattr(synapse, "desearch", None)
-    if not desearch or not desearch.response_body or not desearch.proof:
+    raw_desearch = getattr(synapse, "desearch", [])
+    desearch_list = raw_desearch if isinstance(raw_desearch, list) else []
+    if not desearch_list:
+        print("No Desearch proof on synapse (empty response or missing proof headers).")
+        return 0
+
+    desearch = desearch_list[0]
+    if not desearch.response_body or not desearch.proof:
         print("No Desearch proof on synapse (empty response or missing proof headers).")
         return 0
 

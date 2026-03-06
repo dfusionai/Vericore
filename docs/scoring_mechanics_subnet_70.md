@@ -46,9 +46,13 @@ Miners receive penalties for various validation failures:
 
 #### Validation Bonuses
 
-| Bonus Type | Multiplier | Description |
-|------------|------------|-------------|
+| Bonus Type | Value | Description |
+|------------|--------|-------------|
 | Approved URL Multiplier | 3x | Evidence comes from pre-approved, high-quality domains |
+| Desearch proof valid | +2 | Miner-level: all desearch proofs verify successfully (applied once per response) |
+| Desearch proof invalid | -5 | Miner-level: any desearch proof fails verification |
+| Social bonus (desearch only, proofs valid) | +1 per snippet | Desearch snippet from x.com or twitter.com; only when desearch proofs verify |
+| Social bonus (desearch only, proofs valid) | +0.5 per snippet | Desearch snippet from reddit.com; only when desearch proofs verify |
 
 ### 2. Miner Response Aggregation
 
@@ -66,7 +70,9 @@ For each miner response, the scoring process is:
 2. **Individual snippet scoring**: Each snippet gets validated and scored
 3. **Domain deduplication**: Penalize repeated use of same domain within response
 4. **Speed factor application**: Response time bonus/penalty
-5. **Final aggregation**: Combine all factors into final_score
+5. **Desearch adjustment**: Miner-level +2 (all proofs valid) or -5 (any invalid) or 0 (no desearch)
+6. **Social bonus**: Per desearch snippet only, and only when desearch proofs are valid — +1 for x.com/twitter.com, +0.5 for reddit.com
+7. **Final aggregation**: Combine all factors into final_score
 
 **Formula per miner:**
 ```
@@ -82,8 +88,12 @@ sum_of_snippets = Σ(snippet_score for all valid snippets)
 # Step 4: Apply speed factor
 speed_factor = max(1, 2.0 - (response_time_seconds / 30.0))
 
-# Step 5: Final score for ranking
-final_score = sum_of_snippets × speed_factor
+# Step 5: Desearch adjustment (miner-level) and social bonus (desearch snippets only, proofs valid)
+desearch_adjustment = +2 if all desearch proofs valid, -5 if any invalid, 0 if no desearch proofs
+social_bonus_total = Σ(+1 for desearch snippet from x.com/twitter.com, +0.5 for reddit.com; 0 for web or if proofs invalid)
+
+# Step 6: Final score for ranking
+final_score = (sum_of_snippets × speed_factor) + desearch_adjustment + social_bonus_total
 ```
 
 **Speed Factor Details:**

@@ -37,6 +37,7 @@ VALIDATOR_JWT_ALGORITHM = os.environ.get("VALIDATOR_JWT_ALGORITHM", "RS512")
 INITIAL_WEIGHT = 0.7
 
 # Desearch (miner-side): API key for Desearch; set when using Desearch miner.
+# Web search: GET https://api.desearch.ai/web?num=10&start=0&query=...
 DESEARCH_API_KEY = os.environ.get("DESEARCH_API_KEY", "")
 DESEARCH_BASE_URL = os.environ.get("DESEARCH_BASE_URL", "https://api.desearch.ai")
 
