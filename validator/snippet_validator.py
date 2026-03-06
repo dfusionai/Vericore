@@ -418,12 +418,11 @@ class SnippetValidator:
         response: VericoreStatementResponse,
         start_time: float,
     ) -> VericoreStatementResponse:
-        """Set verify_miner_time_taken_secs on response (and timing) from start_time. Only set when snippet_found (success); leave 0 for errors."""
-        if response.snippet_found:
-            elapsed = time.perf_counter() - start_time
-            response.verify_miner_time_taken_secs = elapsed
-            if response.timing is not None:
-                response.timing.verify_miner_time_taken_secs = elapsed
+        """Set verify_miner_time_taken_secs on response (and timing) from start_time. Always set regardless of snippet_found."""
+        elapsed = time.perf_counter() - start_time
+        response.verify_miner_time_taken_secs = elapsed
+        if response.timing is not None:
+            response.timing.verify_miner_time_taken_secs = elapsed
         return response
 
     def _create_invalid_statement_response(
