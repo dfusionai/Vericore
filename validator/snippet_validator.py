@@ -48,6 +48,8 @@ from shared.scores import (
     IS_SEARCH_WEB_PAGE,
     FAKE_SNIPPET,
     DESEARCH_EVIDENCE_NOT_IN_RESPONSE,
+    SOCIAL_BONUS_DOMAINS_X,
+    SOCIAL_BONUS_DOMAIN_REDDIT_NAME,
 )
 from validator.statement_context_evaluator import assess_statement_async
 from validator.web_page_validator import is_search_web_page
@@ -566,6 +568,14 @@ class SnippetValidator:
         )
         signals = self._extract_assessment_signals(assessment_result) if assessment_result else self._extract_assessment_signals({})
 
+        # For desearch: approved (top) sites = x.com / twitter.com / reddit.com OR domain in top_site cache
+        domain_lower = (domain or "").lower()
+        is_social_top = domain_lower in SOCIAL_BONUS_DOMAINS_X or domain_lower == SOCIAL_BONUS_DOMAIN_REDDIT_NAME
+        approved_url_multiplier = (
+            APPROVED_URL_MULTIPLIER
+            if is_social_top or is_approved_site(request_id, miner_uid, domain or "")
+            else 1
+        )
         bt.logging.info(
             f"{request_id} | {miner_uid} | {miner_evidence.url} | Desearch snippet validated | "
             f"local_score: {local_score} | assess_secs: {assess_statement_time_taken_secs:.3f}s"
@@ -580,7 +590,7 @@ class SnippetValidator:
             neutral=probs["neutral"],
             entailment=probs["entailment"],
             local_score=local_score,
-            approved_url_multiplier=1,
+            approved_url_multiplier=approved_url_multiplier,
             snippet_score=0,
             context_similarity_score=0.0,
             statement_similarity_score=0.0,
