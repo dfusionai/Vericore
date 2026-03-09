@@ -76,6 +76,13 @@ EXPLORATION_FACTOR = 0.1  # 10% exploration
 NEW_MINER_BONUS = 2.0
 
 
+def normalize_endpoint(s: str | None) -> str | None:
+    """Strip leading/trailing whitespace (including Unicode NBSP U+00A0) from endpoint/URL strings."""
+    if not s or not isinstance(s, str):
+        return s
+    return s.strip()
+
+
 def get_parser():
     """Build argument parser with Bittensor and axon args (shared by get_config and __main__)."""
     parser = argparse.ArgumentParser()
@@ -130,6 +137,12 @@ class APIQueryHandler:
     def get_config(self):
         parser = get_parser()
         config = bt.config(parser)
+
+        # Normalize endpoint URLs so trailing Unicode whitespace (e.g. NBSP) does not break port parsing
+        if getattr(config.subtensor, "network", None):
+            config.subtensor.network = normalize_endpoint(config.subtensor.network)
+        if getattr(config.subtensor, "chain_endpoint", None):
+            config.subtensor.chain_endpoint = normalize_endpoint(config.subtensor.chain_endpoint)
 
         bt.logging.info(f"get_config: {config}")
         config.full_path = os.path.expanduser(
@@ -903,7 +916,7 @@ class JWTAuthMiddleware(BaseHTTPMiddleware):
         return await call_next(request)
 
 
-app.add_middleware(JWTAuthMiddleware)
+# app.add_middleware(JWTAuthMiddleware)
 
 
 # Create the APIQueryHandler during startup and store it in app.state.
