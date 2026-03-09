@@ -15,6 +15,7 @@ Desearch proof validation and snippet scoring has been refactored into two disti
 |---|---|---|---|
 | `DESEARCH_PROOF_VALID_BONUS` | +2 | Miner | Added to final score when all desearch proofs verify successfully |
 | `DESEARCH_PROOF_INVALID_PENALTY` | -5 | Miner | Added to final score when any desearch proof fails verification |
+| `DESEARCH_EVIDENCE_NOT_IN_RESPONSE` | -1 | Per desearch snippet | Snippet score when URL is not found in any desearch response body (`snippet_found=False`, reason `desearch_evidence_not_in_response`) |
 | `SOCIAL_BONUS_DOMAIN_X` | +1 | Per desearch snippet | Added per desearch snippet when domain is x.com or twitter.com |
 | `SOCIAL_BONUS_DOMAIN_REDDIT` | +0.5 | Per desearch snippet | Added per desearch snippet when domain is reddit.com |
 | `APPROVED_URL_MULTIPLIER` | 3 | Per snippet | For desearch, x.com / twitter.com / reddit.com **or** any domain in the top-site cache get this multiplier; other desearch domains get 1. For web, only top-site cache is used. |
@@ -69,6 +70,8 @@ Miner Response Received
          |      evidence_
          |      not_in_
          |      response"
+         |     snippet_score=-1
+         |     (DESEARCH_EVIDENCE_NOT_IN_RESPONSE)
          |                    NLI + AI assessment →
          |                    snippet_found=True, local_score,
          |                    approved_url_multiplier=3 for x.com/twitter/reddit or top_site cache, else 1
