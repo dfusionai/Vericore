@@ -557,10 +557,24 @@ class APIQueryHandler:
             veridex_response = miner_response.synapse.veridex_response or []
             for i, statement_response in enumerate(vericore_statement_responses):
                 if statement_response.snippet_found:
-                    # First use of domain: no penalty (factor 1.0); second use 0.5; third 0.25; etc.
-                    times_used = domain_seen_count.get(statement_response.domain, 0)
-                    domain_seen_count[statement_response.domain] = times_used + 1
-                    domain_factor = 1.0 / (2**times_used)
+                    evidence = veridex_response[i] if i < len(veridex_response) else None
+                    is_desearch = evidence is not None and evidence.source_type == SourceType.DESEARCH.value
+
+                    if is_desearch:
+                        domain_lower = (statement_response.domain or "").lower()
+                        is_social_domain = domain_lower in SOCIAL_BONUS_DOMAINS_X or domain_lower == SOCIAL_BONUS_DOMAIN_REDDIT_NAME
+                        if is_social_domain:
+                            # Desearch only: x.com, twitter.com, reddit.com get no duplicate-domain penalty; domain_factor = 1
+                            domain_factor = 1.0
+                        else:
+                            times_used = domain_seen_count.get(statement_response.domain, 0)
+                            domain_seen_count[statement_response.domain] = times_used + 1
+                            domain_factor = 1.0 / (2**times_used)
+                    else:
+                        # Web: first use 1.0, second 0.5, third 0.25; etc.
+                        times_used = domain_seen_count.get(statement_response.domain, 0)
+                        domain_seen_count[statement_response.domain] = times_used + 1
+                        domain_factor = 1.0 / (2**times_used)
                     if statement_response.context_similarity_score < 0:
                         statement_response.context_similarity_score = 0
 
@@ -573,10 +587,7 @@ class APIQueryHandler:
                     statement_response.domain_factor = domain_factor
 
                     # Social bonus: desearch snippets only, and only when desearch proofs are valid; x.com/twitter.com → +1, reddit.com → +0.5
-                    if i < len(veridex_response):
-                        evidence = veridex_response[i]
-                        if desearch_proof_valid and evidence.source_type == SourceType.DESEARCH.value:
-                            domain_lower = (statement_response.domain or "").lower()
+                    if is_desearch and desearch_proof_valid:
                             if domain_lower in SOCIAL_BONUS_DOMAINS_X:
                                 social_bonus_total += SOCIAL_BONUS_DOMAIN_X
                                 statement_response.social_bonus_contribution = SOCIAL_BONUS_DOMAIN_X
