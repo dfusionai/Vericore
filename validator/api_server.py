@@ -995,7 +995,6 @@ class JWTAuthMiddleware(BaseHTTPMiddleware):
         # OPTIONS preflight requests do not send Authorization; let them through so CORSMiddleware can respond
         if request.method == "OPTIONS":
             return await call_next(request)
-        return await call_next(request)
 
         auth = request.headers.get("Authorization")
         if not auth:
@@ -1092,7 +1091,7 @@ class JWTAuthMiddleware(BaseHTTPMiddleware):
         bt.logging.info(f"JWT auth: valid JWT accepted for {request.url.path}")
         return await call_next(request)
 
-
+# Disable JWT auth for testing
 app.add_middleware(JWTAuthMiddleware)
 
 
