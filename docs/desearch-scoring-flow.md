@@ -76,7 +76,9 @@ Miner Response Received
          +------------+-------------+
                       |
                       v
-         For each snippet_found: domain_factor = 1/2^times_used (1st use=1.0, 2nd=0.5, 3rd=0.25, ...)
+         For each snippet_found:
+           - Desearch only, and domain is x.com/twitter.com/reddit.com: domain_factor = 1 (no duplicate-domain check)
+           - Web, or desearch with other domains: domain_factor = 1/2^times_used (1st use=1.0, 2nd=0.5, 3rd=0.25, ...)
          snippet_score = local_score × domain_factor × approved_url_multiplier
                       |
                       v
@@ -127,18 +129,19 @@ Each snippet is validated concurrently. When `source_type == "desearch"`:
 Snippets are processed in order. For each response with `snippet_found=True`:
 
 1. **Domain diversity factor**  
-   For each domain, we track how many times it has been used so far in this response. The first snippet from a domain gets no penalty; repeated use of the same domain is discounted:
-   - First use of domain: `domain_factor = 1.0`
-   - Second use: `domain_factor = 0.5`
-   - Third use: `domain_factor = 0.25`
-   - Fourth use: `domain_factor = 0.125`
-   - etc. (formula: `domain_factor = 1 / 2^times_used`)
+   - **Desearch only, and domain is x.com, twitter.com, or reddit.com**: `domain_factor = 1` (no duplicate-domain check).
+   - **Web, or desearch with any other domain**: For each domain we track how many times it has been used so far in this response. The first snippet from a domain gets no penalty; repeated use of the same domain is discounted:
+     - First use of domain: `domain_factor = 1.0`
+     - Second use: `domain_factor = 0.5`
+     - Third use: `domain_factor = 0.25`
+     - Fourth use: `domain_factor = 0.125`
+     - etc. (formula: `domain_factor = 1 / 2^times_used`)
 
 2. **Per-snippet score**
    ```
    snippet_score = local_score × domain_factor × approved_url_multiplier
    ```
-   `local_score` comes from NLI (entailment + contradiction; see quality model). For **desearch**, `approved_url_multiplier` = 3 when the domain is x.com, twitter.com, reddit.com **or** is in the top-site cache; otherwise 1. For **web**, `approved_url_multiplier` is 3 if the domain is on the dashboard top-site list, else 1.
+   `local_score` comes from NLI (entailment + contradiction; see quality model). For **desearch snippets from x.com, twitter.com, or reddit.com**, `domain_factor` is always 1; for **web snippets** and **desearch from other domains**, `domain_factor` = 1 / 2^times_used for that domain. For **desearch**, `approved_url_multiplier` = 3 when the domain is x.com, twitter.com, reddit.com **or** is in the top-site cache; otherwise 1. For **web**, `approved_url_multiplier` is 3 if the domain is on the dashboard top-site list, else 1.
 
 3. **Aggregation**
    ```
@@ -161,7 +164,9 @@ The desearch adjustment is additive and independent of the speed factor. The soc
 
 2. **Trust desearch URLs, verify URL in body**: Desearch responses are cryptographically signed, so we trust URLs from them (skip blacklist, domain age, SSL, page fetch). We still require the miner's claimed **URL** to appear in at least one signed response body, preventing miners from claiming arbitrary content came from desearch.
 
-3. **NLI and assessment, no excerpt checks**: For desearch we skip statement/excerpt/similarity checks and run only NLI and AI assessment. Snippets are scored on relevance (local_score) and diversity (domain_factor), plus social bonus when applicable.
+3. **NLI and assessment, no excerpt checks**: For desearch we skip statement/excerpt/similarity checks and run only NLI and AI assessment. Snippets are scored on relevance (local_score) and approved_url_multiplier, plus social bonus when applicable.
+
+4. **No duplicate-domain discount for desearch social domains only**: Desearch snippets from x.com, twitter.com, or reddit.com use `domain_factor = 1`. Web snippets (and desearch from other domains) use the domain-diversity penalty (repeated use of the same domain gets 0.5, 0.25, etc.).
 
 ---
 
@@ -170,6 +175,6 @@ The desearch adjustment is additive and independent of the speed factor. The soc
 | File | Change |
 |---|---|
 | `shared/scores.py` | `DESEARCH_PROOF_VALID_BONUS` (+2), `DESEARCH_PROOF_INVALID_PENALTY` (-5), `SOCIAL_BONUS_DOMAIN_X` (+1), `SOCIAL_BONUS_DOMAIN_REDDIT` (+0.5) |
-| `validator/api_server.py` | Miner-level `desearch_adjustment`; per-snippet `snippet_score = local_score × domain_factor × approved_url_multiplier`; **domain diversity**: first use of a domain gets `domain_factor=1.0`, second use `0.5`, third `0.25`, etc. (`1/2^times_used`); social bonus only for desearch snippets when proofs valid |
+| `validator/api_server.py` | Miner-level `desearch_adjustment`; per-snippet `snippet_score = local_score × domain_factor × approved_url_multiplier`; **domain diversity**: **desearch + x.com/twitter.com/reddit.com** use `domain_factor=1`; **web** and **desearch other domains** use first use `domain_factor=1.0`, second `0.5`, etc. (`1/2^times_used`); social bonus only for desearch snippets when proofs valid |
 | `validator/snippet_validator.py` | Desearch: evidence-in-body (URL in body); no statement/excerpt/similarity checks; NLI + AI assessment; **top sites for desearch**: x.com, twitter.com, reddit.com or domain in top_site cache get `approved_url_multiplier` = 3; sets `verify_miner_time_taken_secs` in callees via `_with_verify_time` (always set) |
 | `shared/veridex_protocol.py` | `desearch` as `List[Desearch]`; `desearch_bonus_score` in response |
