@@ -1105,7 +1105,7 @@ class JWTAuthMiddleware(BaseHTTPMiddleware):
         return await call_next(request)
 
 
-#app.add_middleware(JWTAuthMiddleware)
+app.add_middleware(JWTAuthMiddleware)
 
 
 # Create the APIQueryHandler during startup and store it in app.state.
