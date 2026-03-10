@@ -103,11 +103,14 @@ In addition to the fields in section 2, each snippet response includes:
 
 - **Legacy (top-level):** `verify_miner_time_taken_secs`, `fetch_page_time_taken_secs`, `assess_statement_time_taken_secs`, `snippet_fetcher_http_time_secs`, `snippet_fetcher_selenium_time_secs`, `snippet_fetcher_total_time_secs`, `cleaning_html_time_taken_secs`, `fetch_by_http_status`, `fetch_by_selenium_status`.
 - **timing:** `StatementResponseTiming` — same values as above, plus all timing/status in one object. Use `timing.fetch_by_http_status` / `timing.fetch_by_selenium_status` and `timing.cleaning_html_time_taken_secs` for fetch-by-HTTP/Selenium status and cleaning_html timing.
+- **social_bonus_contribution:** Per-excerpt contribution to the miner’s social bonus. `0` for web snippets or when desearch proofs are invalid; `1.0` for a desearch snippet from x.com/twitter.com; `0.5` for a desearch snippet from reddit.com (only when proofs are valid). The miner’s `social_bonus_score` is the sum of this field across all snippets.
 
 ### VericoreMinerStatementResponse (per-miner)
 
 - **Legacy (top-level):** `elapsed_time`, `total_fetch_time_secs`, `total_ai_time_secs`, `total_other_time_secs`, `avg_snippet_time_secs`, `max_snippet_time_secs`, `snippet_count`.
 - **timing:** `MinerResponseTiming` — same aggregated timing in one object.
+- **desearch_bonus_score:** Miner-level desearch proof bonus or penalty. `+2` when all desearch proofs verify successfully, `-5` when any proof fails, `0` when no desearch proofs are provided.
+- **social_bonus_score:** Sum of per-snippet social bonus for **desearch** snippets only, and only when desearch proofs are valid. `+1` per snippet from x.com or twitter.com, `+0.5` per snippet from reddit.com; web snippets do not contribute. If proofs are invalid or absent, this is 0. Added to `final_score` along with `desearch_bonus_score`.
 
 ### VericoreQueryResponse (per-query)
 

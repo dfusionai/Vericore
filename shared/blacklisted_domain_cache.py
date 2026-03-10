@@ -10,8 +10,10 @@ class BlacklistedDomainCache:
     def __init__(self):
         dashboard_api_url = DASHBOARD_API_URL
         self.url = f"{dashboard_api_url}/blacklisted-domains"
+        self.cache = self.fetch_blacklisted_domains() or set()
         self.domain_set = set()
         self.subdomain_set = set()
+
         self.time_refreshed = None
         result = self.fetch_blacklisted_domains()
         if result is not None:
