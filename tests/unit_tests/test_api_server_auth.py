@@ -26,6 +26,10 @@ except ModuleNotFoundError:
 
 pytestmark = pytest.mark.skipif(not _APP_AVAILABLE, reason="Full project deps (bittensor, fastapi) required")
 
+# JWT config the middleware must use so HS256 tokens validate (import order can leave default RS512).
+_TEST_JWT_PUBLIC_KEY = "test_secret_for_hmac"
+_TEST_JWT_ALGORITHM = "HS256"
+
 
 def _make_valid_token():
     """Token with sub=validator_proxy and future exp, signed with test secret."""
@@ -35,8 +39,8 @@ def _make_valid_token():
     }
     return jwt.encode(
         payload,
-        "test_secret_for_hmac",
-        algorithm="HS256",
+        _TEST_JWT_PUBLIC_KEY,
+        algorithm=_TEST_JWT_ALGORITHM,
     )
 
 
@@ -58,7 +62,10 @@ def client():
             return_value=minimal_response
         )
 
-    with patch("validator.api_server.startup_event", mock_startup):
+    # Force middleware to use HS256 and test key (avoids RS512 default when env is read after other imports).
+    with patch("validator.api_server.VALIDATOR_JWT_PUBLIC_KEY", _TEST_JWT_PUBLIC_KEY), patch(
+        "validator.api_server.VALIDATOR_JWT_ALGORITHM", _TEST_JWT_ALGORITHM
+    ), patch("validator.api_server.startup_event", mock_startup):
         with TestClient(app) as c:
             yield c
 
@@ -95,8 +102,8 @@ def test_veridex_query_with_expired_token_returns_401(client):
     payload = {"sub": "validator_proxy", "exp": time.time() - 60}
     token = jwt.encode(
         payload,
-        "test_secret_for_hmac",
-        algorithm="HS256",
+        _TEST_JWT_PUBLIC_KEY,
+        algorithm=_TEST_JWT_ALGORITHM,
     )
     response = client.post(
         "/veridex_query",

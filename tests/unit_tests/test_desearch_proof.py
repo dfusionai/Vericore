@@ -1,6 +1,7 @@
 """Unit tests for Desearch proof verification (shared.desearch_proof)."""
+import sys
 from datetime import datetime, timezone, timedelta
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from shared.desearch_proof import verify_proof
 
@@ -47,6 +48,10 @@ def test_verify_proof_valid_calls_keypair_verify():
     """Valid proof should call Keypair.verify and return True (when bittensor available)."""
     pytest = __import__("pytest")
     pytest.importorskip("bittensor")
+    # Ensure bittensor has Keypair so patch() works even if another test replaced bittensor with MockBt
+    bt = sys.modules.get("bittensor")
+    if bt is not None and not hasattr(bt, "Keypair"):
+        bt.Keypair = MagicMock()
     with patch("bittensor.Keypair") as mock_keypair_cls:
         mock_keypair_cls.return_value.verify.return_value = True
         future = (datetime.now(timezone.utc) + timedelta(minutes=5)).isoformat()
@@ -69,6 +74,9 @@ def test_verify_proof_verify_returns_false():
     """When Keypair.verify returns False, verify_proof returns False (when bittensor available)."""
     pytest = __import__("pytest")
     pytest.importorskip("bittensor")
+    bt = sys.modules.get("bittensor")
+    if bt is not None and not hasattr(bt, "Keypair"):
+        bt.Keypair = MagicMock()
     with patch("bittensor.Keypair") as mock_keypair_cls:
         mock_keypair_cls.return_value.verify.return_value = False
         future = (datetime.now(timezone.utc) + timedelta(minutes=5)).isoformat()
