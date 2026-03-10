@@ -338,11 +338,17 @@ class SnippetValidator:
         miner_uid: int,
         original_statement: str,
         domain: str,
-        miner_evidence: SourceEvidence
+        miner_evidence: SourceEvidence,
+        hostname: str | None = None,
     ) -> VericoreStatementResponse | None:
 
         # Check if domain is blacklisted
-        if is_blacklisted_domain(request_id=request_id, miner_uid=miner_uid, domain=domain):
+        if is_blacklisted_domain(
+            request_id=request_id,
+            miner_uid=miner_uid,
+            domain=domain,
+            hostname=hostname,
+        ):
             snippet_score = BLACKLISTED_URL_SCORE
             return VericoreStatementResponse(
                 url=miner_evidence.url,
@@ -459,12 +465,14 @@ class SnippetValidator:
                 f"{request_id} | {miner_uid} | {miner_evidence.url} | Domain verified"
             )
 
+            hostname = urlparse(miner_evidence.url).hostname
             vericore_miner_response = await self.validate_miner_url(
                 request_id=request_id,
                 miner_uid=miner_uid,
                 original_statement=original_statement,
                 domain=domain,
-                miner_evidence=miner_evidence
+                miner_evidence=miner_evidence,
+                hostname=hostname,
             )
             if vericore_miner_response is not None:
                 return vericore_miner_response
