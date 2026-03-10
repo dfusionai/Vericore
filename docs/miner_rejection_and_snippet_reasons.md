@@ -105,6 +105,10 @@ In addition to the fields in section 2, each snippet response includes:
 - **timing:** `StatementResponseTiming` — same values as above, plus all timing/status in one object. Use `timing.fetch_by_http_status` / `timing.fetch_by_selenium_status` and `timing.cleaning_html_time_taken_secs` for fetch-by-HTTP/Selenium status and cleaning_html timing.
 - **social_bonus_contribution:** Per-excerpt contribution to the miner’s social bonus. `0` for web snippets or when desearch proofs are invalid; `1.0` for a desearch snippet from x.com/twitter.com; `0.5` for a desearch snippet from reddit.com (only when proofs are valid). The miner’s `social_bonus_score` is the sum of this field across all snippets.
 
+- **category:** `EvidenceCategory` — Whether this snippet is classified as social or web evidence. Wire value is the string (e.g. in JSON: `"Social"` or `"Web"`). Enum values:
+  - `EvidenceCategory.SOCIAL` (wire: `"Social"`) — Snippet URL domain is x.com, twitter.com, or reddit.com.
+  - `EvidenceCategory.WEB` (wire: `"Web"`) — All other domains.
+
 ### VericoreMinerStatementResponse (per-miner)
 
 - **Legacy (top-level):** `elapsed_time`, `total_fetch_time_secs`, `total_ai_time_secs`, `total_other_time_secs`, `avg_snippet_time_secs`, `max_snippet_time_secs`, `snippet_count`.
@@ -136,6 +140,7 @@ Charts that miners (or miner dashboards) can build using the protocol types in [
 
 - **snippet_score_reason** — Bar chart of `snippet_score_reason` counts (miner’s own snippets) to see why snippets fail or get low scores.
 - **snippet_found** — Proportion of snippets with `snippet_found=True` vs False.
+- **category** — Distribution of `category` (Social vs Web) per miner or per request.
 - **local_score vs snippet_score** — Scatter or box: effect of `domain_factor` and `approved_url_multiplier`.
 - **NLI probs** — Distribution of `contradiction`, `neutral`, `entailment` (e.g. small histograms or ternary) to see support/contradict mix.
 - **Timing** — Use top-level fields or `timing`: `verify_miner_time_taken_secs`, `fetch_page_time_taken_secs`, `assess_statement_time_taken_secs`, `fetch_by_http_time_secs`, `fetch_by_selenium_time_secs`, `snippet_fetcher_total_time_secs`, `cleaning_html_time_taken_secs` to see fetch vs AI vs cleaning_html vs other.
