@@ -1,3 +1,5 @@
+from shared.veridex_protocol import EvidenceCategory
+
 UNREACHABLE_MINER_SCORE = -10
 NO_STATEMENTS_PROVIDED_SCORE = -5
 INVALID_RESPONSE_MINER_SCORE = -10
@@ -33,3 +35,11 @@ SOCIAL_BONUS_DOMAIN_X = 1.0
 SOCIAL_BONUS_DOMAIN_REDDIT = 0.5
 SOCIAL_BONUS_DOMAINS_X = ("x.com", "twitter.com")  # domains that receive SOCIAL_BONUS_DOMAIN_X
 SOCIAL_BONUS_DOMAIN_REDDIT_NAME = "reddit.com"
+
+
+def evidence_category_for_domain(domain: str) -> EvidenceCategory:
+    """Return EvidenceCategory.SOCIAL for x.com/twitter.com/reddit.com, else EvidenceCategory.WEB."""
+    domain_lower = (domain or "").lower()
+    if domain_lower in SOCIAL_BONUS_DOMAINS_X or domain_lower == SOCIAL_BONUS_DOMAIN_REDDIT_NAME:
+        return EvidenceCategory.SOCIAL
+    return EvidenceCategory.WEB
