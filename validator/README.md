@@ -141,7 +141,7 @@ python -m validator.validator_daemon --wallet.name bittensor --wallet.hotkey val
 
 - `--wallet.name`: The name of the wallet.
 - `--wallet.hotkey`: The hotkey name for the validator.
-- `--subtensor.network`: The Bittensor network to connect to.
+- `--subtensor.network`: The Bittensor network to connect to. The URL must not have trailing spaces; the validator normalizes it automatically if present.
 
 ---
 

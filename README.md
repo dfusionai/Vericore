@@ -17,9 +17,11 @@
 ---
 
 ## Overview
+
 Vericore is a Bittensor subnet seeking to improve large-scale semantic fact-checking and verification. The subnet processes statements and returns evidence-based validation through relevant quotes and source materials that either support or contradict the input claims.
 
 ### Key Features
+
 - **Semantic Analysis**: Processes natural language statements and understands their semantic meaning
 - **Source Verification**: Returns precise quotes and segments from sources
 - **Dual Validation**: Provides both corroborating and contradicting evidence when available
@@ -27,6 +29,7 @@ Vericore is a Bittensor subnet seeking to improve large-scale semantic fact-chec
 - **Source Attribution**: All returned evidence includes traceable source information
 
 ### Use Cases
+
 - Media fact-checking
 - Research validation
 - Content verification
@@ -37,23 +40,56 @@ Vericore is a Bittensor subnet seeking to improve large-scale semantic fact-chec
 
 ```
 Vericore/
+├── docs/
+│   ├── desearch-scoring-flow.md            # Desearch scoring and validation flow
+│   ├── miner_rejection_and_snippet_reasons.md
+│   └── scoring_mechanics_subnet_70.md      # Scoring mechanics documentation
+├── keys/
+│   └── validator_jwt_public.pem            # JWT public key for API auth
 ├── miner/
-    ├── perplexica/
-        └── miner.py         # Sample implementation of a naive miner using Perplexica
-    ├── perplexity/
-        └── miner.py         # Sample implementation of a naive miner using Perplexity
+│   ├── desearch/
+│   │   └── miner.py                        # Miner implementation using Desearch API
+│   ├── perplexica/
+│   │   └── miner.py                        # Sample miner using Perplexica
+│   └── perplexity/
+│       └── miner.py                        # Sample miner using Perplexity
 ├── shared/
-    ├── log_data.py          # Log settings and format
-    ├── proxy_log_handler.py # Log handler
-    └── veridex_protocol.py  # Protocol for comms between Validator and Miner
-└── validator
-    ├── active_tester.py     # Produces tests for the miners
-    ├── api_server.py        # Api Server for receiving statements as input
-    ├── domain_validator.py  # Handles domain validation
-    ├── quality_model.py     # Measure Corroboration or Refutation of statements
-    ├── snippet_fetcher.py   # Fetches referenced source material for validation
-    ├── validator_daemon.py  # Daemon that handles axons / server tasks
-    └── verify_context_quality_model.py
+│   ├── blacklisted_domain_cache.py         # Domain blacklist cache
+│   ├── debug_util.py                       # Debug utilities
+│   ├── desearch_proof.py                   # Desearch proof signature verification
+│   ├── environment_variables.py            # Environment variable definitions
+│   ├── exceptions.py                       # Shared exception types
+│   ├── log_data.py                         # Log settings and format
+│   ├── proxy_log_handler.py                # Log handler
+│   ├── scores.py                           # Scoring constants (penalties, bonuses)
+│   ├── store_results_handler.py            # Results storage handler
+│   ├── top_site_cache.py                   # Approved top-site cache
+│   ├── validator_results_data.py           # Validator results data models
+│   ├── veridex_protocol.py                 # Protocol for comms between Validator and Miner
+│   └── wallet_api_key_utils.py             # Wallet-linked API key utilities
+├── tests/
+│   ├── manual/                             # Manual integration tests
+│   └── unit_tests/                         # Automated unit tests
+├── utils/
+│   ├── generate_wallet_linked_token.py     # Generate wallet-linked JWT tokens
+│   ├── link_desearch_miner.py              # Link a miner wallet to Desearch
+│   ├── test_desearch_verify.py             # Test Desearch signature verification
+│   └── validate_desearch_signature.py      # Validate Desearch API signatures
+├── validator/
+│   ├── active_tester.py                    # Produces tests for the miners
+│   ├── api_server.py                       # API server for receiving statements
+│   ├── context_similarity_validator.py     # Context similarity scoring
+│   ├── domain_validator.py                 # Domain validation (age, registration)
+│   ├── open_ai_client_handler.py           # OpenAI client handler
+│   ├── open_ai_proxy_server_handler.py     # OpenAI proxy server handler
+│   ├── quality_model.py                    # Measure corroboration/refutation of statements
+│   ├── similarity_quality_model.py         # Text similarity quality model
+│   ├── snippet_fetcher.py                  # Fetches referenced source material
+│   ├── snippet_validator.py                # Snippet validation and scoring
+│   ├── statement_context_evaluator.py      # AI-based statement assessment
+│   ├── validator_daemon.py                 # Daemon that handles axons / server tasks
+│   └── web_page_validator.py               # Web page content validation
+└── requirements.txt
 ```
 
 ## Prerequisites
@@ -78,7 +114,6 @@ Instructions for installing and setting up a validator can be found in [Validato
 Register both the miner and validator on the Bittensor network.
 
 - **Register the Miner**:
-
   ```bash
   btcli s register --wallet.name mywallet --wallet.hotkey miner_hotkey
   ```
@@ -86,7 +121,6 @@ Register both the miner and validator on the Bittensor network.
 > **Note**: If you're not connecting to the Mainnet, add `ws://127.0.0.1:9944` or specify the name of the network you wish to connect to.
 
 - **Register the Validator**:
-
   ```bash
   btcli s register --wallet.name mywallet --wallet.hotkey validator_hotkey
   ```
@@ -97,9 +131,10 @@ Register both the miner and validator on the Bittensor network.
 
 ## Scoring Mechanics
 
-For detailed information on how miners are scored and ranked in Subnet 70, see the [Scoring Mechanics Documentation](documents/scoring_mechanics_subnet_70.md).
+For detailed information on how miners are scored and ranked in Subnet 70, see the [Scoring Mechanics Documentation](docs/scoring_mechanics_subnet_70.md).
 
 This document covers:
+
 - Individual snippet scoring
 - Validation penalties and bonuses
 - Moving average system (EWMA)
@@ -127,7 +162,7 @@ You can monitor these logs to observe the interactions and performance metrics.
 ## Running a blockchain locally
 
 This section is for running a local blockchain. The full tutorial is found here:
-https://github.com/opentensor/bittensor-subnet-template/blob/main/docs/running_on_staging.md
+[https://github.com/opentensor/bittensor-subnet-template/blob/main/docs/running_on_staging.md](https://github.com/opentensor/bittensor-subnet-template/blob/main/docs/running_on_staging.md)
 
 ### Install Substrate dependencies
 
@@ -181,12 +216,11 @@ BUILD_BINARY=0 ./scripts/localnet.sh False --no-purge
 
 We are running with fast-block off and using localnet.sh due to the following issues:
 
-https://github.com/opentensor/bittensor-subnet-template/issues/118#issuecomment-2547474216
+[https://github.com/opentensor/bittensor-subnet-template/issues/118#issuecomment-2547474216](https://github.com/opentensor/bittensor-subnet-template/issues/118#issuecomment-2547474216)
 
-https://github.com/opentensor/bittensor-subnet-template/issues/118#issuecomment-2552609160
+[https://github.com/opentensor/bittensor-subnet-template/issues/118#issuecomment-2552609160](https://github.com/opentensor/bittensor-subnet-template/issues/118#issuecomment-2552609160)
 
 **Note**: Watch for any build or initialization outputs in this step. If you are building the project for the first time, this step will take a while to finish building, depending on your hardware.
-
 
 ### Mint tokens from faucet
 

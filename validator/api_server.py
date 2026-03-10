@@ -1,3 +1,4 @@
+import base64
 import os
 import time
 import random
@@ -31,17 +32,27 @@ from shared.veridex_protocol import (
     VericoreQueryResponse,
     VericoreStatementResponse,
     SourceEvidence,
+    SourceType,
+    Desearch,
     StatementResponseTiming,
     MinerResponseTiming,
     QueryResponseTiming,
     SNIPPET_FETCHER_STATUS_NOT_RUN,
 )
+from shared.desearch_proof import verify_proof
 from shared.scores import (
     UNREACHABLE_MINER_SCORE,
     INVALID_RESPONSE_MINER_SCORE,
     NO_STATEMENTS_PROVIDED_SCORE,
-    DUPLICATE_EXACT_MINER_STATEMENTS
+    DUPLICATE_EXACT_MINER_STATEMENTS,
+    DESEARCH_PROOF_VALID_BONUS,
+    DESEARCH_PROOF_INVALID_PENALTY,
+    SOCIAL_BONUS_DOMAIN_X,
+    SOCIAL_BONUS_DOMAIN_REDDIT,
+    SOCIAL_BONUS_DOMAINS_X,
+    SOCIAL_BONUS_DOMAIN_REDDIT_NAME,
 )
+from shared.wallet_api_key_utils import get_linked_wallet_from_payload
 from shared.log_data import LoggerType
 from shared.proxy_log_handler import register_proxy_log_handler
 from validator.snippet_validator import run_validate_miner_snippet
@@ -74,6 +85,13 @@ MAX_WEIGHT = 10.0  # Cap on how much weight any miner can have
 MIN_WEIGHT = 1.0  # Floor to give new miners a chance
 EXPLORATION_FACTOR = 0.1  # 10% exploration
 NEW_MINER_BONUS = 2.0
+
+
+def normalize_endpoint(s: str | None) -> str | None:
+    """Strip leading/trailing whitespace (including Unicode NBSP U+00A0) from endpoint/URL strings."""
+    if not s or not isinstance(s, str):
+        return s
+    return s.strip()
 
 
 def get_parser():
@@ -127,9 +145,23 @@ class APIQueryHandler:
         self.results_dir = "results"
         os.makedirs(self.results_dir, exist_ok=True)
 
+    def _sanitize_endpoint(self, s: str) -> str:
+        """Remove non-breaking space (\\xa0) and strip whitespace from endpoint URLs."""
+        if not s or not isinstance(s, str):
+            return s
+        return s.replace("\xa0", "").strip()
+
     def get_config(self):
         parser = get_parser()
         config = bt.config(parser)
+
+        # Sanitize subtensor endpoint so port/URL parsing does not fail on stray \\xa0 (e.g. from env)
+        if hasattr(config, "subtensor"):
+            for attr in ("chain_endpoint", "network"):
+                if hasattr(config.subtensor, attr):
+                    val = getattr(config.subtensor, attr)
+                    if isinstance(val, str):
+                        setattr(config.subtensor, attr, self._sanitize_endpoint(val))
 
         bt.logging.info(f"get_config: {config}")
         config.full_path = os.path.expanduser(
@@ -180,7 +212,7 @@ class APIQueryHandler:
         response = await self.dendrite.call(
             target_axon=target_axon, synapse=synapse, timeout=120, deserialize=True
         )
-        bt.logging.info(f"{self.my_uid} | {request_id} | {miner_uid} | Called axon {target_axon.hotkey} | Received response {response}")
+        bt.logging.info(f"{self.my_uid} | {request_id} | {miner_uid} | Called axon {target_axon.hotkey} ")
         end_time = time.time()
         elapsed = end_time - start_time + 1e-9
         veridex_response: VeridexResponse = VeridexResponse(
@@ -229,6 +261,61 @@ class APIQueryHandler:
         # miner is reachable
         return None
 
+    def _validate_desearch_evidence(
+        self,
+        miner_uid: int,
+        miner_hotkey: str,
+        request_id: str,
+        veridex_responses: List[SourceEvidence],
+        raw_desearch,
+    ) -> VericoreMinerStatementResponse | None:
+        """
+        If any evidence is from Desearch, require desearch (list) with full proof for every item.
+        Returns an error VericoreMinerStatementResponse on failure, or None if no desearch evidence or validation passes.
+        """
+        has_desearch = any(
+            getattr(ev, "source_type", SourceType.WEB.value) == SourceType.DESEARCH.value for ev in veridex_responses
+        )
+        if not has_desearch:
+            return None
+        desearch_list = raw_desearch if isinstance(raw_desearch, list) else []
+        if not desearch_list:
+            bt.logging.warning(
+                f"{self.my_uid} | {request_id} | {miner_uid} | Desearch evidence but synapse.desearch missing or empty"
+            )
+            return VericoreMinerStatementResponse(
+                miner_hotkey=miner_hotkey,
+                miner_uid=miner_uid,
+                status="desearch_proof_missing",
+                raw_score=INVALID_RESPONSE_MINER_SCORE,
+                final_score=INVALID_RESPONSE_MINER_SCORE,
+            )
+        for item in desearch_list:
+            if not item or not getattr(item, "response_body", None) or not getattr(item, "proof", None):
+                bt.logging.warning(
+                    f"{self.my_uid} | {request_id} | {miner_uid} | Desearch evidence but synapse.desearch item missing body or proof"
+                )
+                return VericoreMinerStatementResponse(
+                    miner_hotkey=miner_hotkey,
+                    miner_uid=miner_uid,
+                    status="desearch_proof_missing",
+                    raw_score=INVALID_RESPONSE_MINER_SCORE,
+                    final_score=INVALID_RESPONSE_MINER_SCORE,
+                )
+            p = getattr(item, "proof", None)
+            if not (p and getattr(p, "signature", None) and getattr(p, "timestamp", None) and getattr(p, "expiry", None)):
+                bt.logging.warning(
+                    f"{self.my_uid} | {request_id} | {miner_uid} | Desearch proof fields incomplete"
+                )
+                return VericoreMinerStatementResponse(
+                    miner_hotkey=miner_hotkey,
+                    miner_uid=miner_uid,
+                    status="desearch_proof_incomplete",
+                    raw_score=INVALID_RESPONSE_MINER_SCORE,
+                    final_score=INVALID_RESPONSE_MINER_SCORE,
+                )
+        return None
+
     def validate_miner_response(
         self,
         miner_uid: int,
@@ -265,6 +352,16 @@ class APIQueryHandler:
                 final_score=NO_STATEMENTS_PROVIDED_SCORE,
             )
             return miner_statement
+
+        desearch_error = self._validate_desearch_evidence(
+            miner_uid,
+            miner_hotkey,
+            request_id,
+            veridex_responses,
+            getattr(miner_response.synapse, "desearch", None),
+        )
+        if desearch_error is not None:
+            return desearch_error
 
         # Valid statements returned
         return None
@@ -350,7 +447,73 @@ class APIQueryHandler:
 
 
             # Process Vericore response data
-            bt.logging.info(f"{self.my_uid} | {request_id} | {miner_uid} | Verifying Miner Statements. Received {len(miner_response.synapse.veridex_response)} responses. Only Processing {MAX_MINER_RESPONSES}")
+            veridex_resp = miner_response.synapse.veridex_response or []
+            bt.logging.info(f"{self.my_uid} | {request_id} | {miner_uid} | Verifying Miner Statements. Received {len(veridex_resp)} responses. Only Processing {MAX_MINER_RESPONSES}")
+
+            # Log what we received from miner
+            for i, ev in enumerate(veridex_resp[:MAX_MINER_RESPONSES]):
+                url = getattr(ev, "url", "") or ""
+                stype = getattr(ev, "source_type", SourceType.WEB.value)
+                excerpt = (getattr(ev, "excerpt", "") or "")[:80]
+                bt.logging.info(
+                    f"{self.my_uid} | {request_id} | {miner_uid} | miner_response[{i}] url={url[:60]}... source_type={stype} excerpt={excerpt!r}..."
+                )
+            raw_desearch = getattr(miner_response.synapse, "desearch", None)
+            desearch_list = raw_desearch if isinstance(raw_desearch, list) else []
+            if desearch_list:
+                for idx, d in enumerate(desearch_list):
+                    if d and getattr(d, "response_body", None) and getattr(d, "proof", None):
+                        p = getattr(d, "proof", None)
+                        bt.logging.info(
+                            f"{self.my_uid} | {request_id} | {miner_uid} | miner_response desearch[{idx}]: response_body_b64_len={len(d.response_body)} "
+                            f"proof.signature_len={len(getattr(p, 'signature', '') or '')} timestamp={getattr(p, 'timestamp', '')!r} expiry={getattr(p, 'expiry', '')!r}"
+                        )
+                    else:
+                        bt.logging.info(f"{self.my_uid} | {request_id} | {miner_uid} | miner_response desearch[{idx}]: absent or incomplete")
+            else:
+                bt.logging.info(f"{self.my_uid} | {request_id} | {miner_uid} | miner_response desearch: absent or empty")
+            bt.logging.info(f"{self.my_uid} | {request_id} | {miner_uid} | miner_response elapse_time={getattr(miner_response, 'elapse_time', None)}")
+
+            # Desearch: verify every proof and collect all response bodies
+            desearch_proof_valid = False
+            desearch_response_bodies: List[bytes] = []
+            if desearch_list:
+                coldkey = ""
+                if hasattr(self.metagraph, "coldkeys") and miner_uid < len(self.metagraph.coldkeys):
+                    coldkey = self.metagraph.coldkeys[miner_uid]
+                else:
+                    neuron_obj = self.metagraph.neurons[miner_uid]
+                    coldkey = getattr(neuron_obj, "coldkey", "") or ""
+                if not coldkey:
+                    bt.logging.warning(f"{self.my_uid} | {request_id} | {miner_uid} | No coldkey for miner, Desearch proof invalid")
+                else:
+                    all_valid = True
+                    for d in desearch_list:
+                        if not d or not getattr(d, "response_body", None) or not getattr(d, "proof", None):
+                            all_valid = False
+                            break
+                        try:
+                            body_bytes = base64.b64decode(d.response_body)
+                            ok = verify_proof(
+                                coldkey=coldkey,
+                                response_body=body_bytes,
+                                signature_hex=d.proof.signature,
+                                timestamp=d.proof.timestamp,
+                                expiry=d.proof.expiry,
+                            )
+                            if ok:
+                                desearch_response_bodies.append(body_bytes)
+                            else:
+                                all_valid = False
+                                break
+                        except Exception as e:
+                            bt.logging.warning(f"{self.my_uid} | {request_id} | {miner_uid} | Desearch proof verification failed: {e}")
+                            all_valid = False
+                            break
+                    desearch_proof_valid = all_valid and len(desearch_response_bodies) == len(desearch_list)
+            # When any proof failed, do not pass partial bodies: no desearch snippet may pass evidence-in-body
+            if not desearch_proof_valid:
+                desearch_response_bodies = []
 
             # Create tasks
             tasks = [
@@ -358,7 +521,8 @@ class APIQueryHandler:
                     request_id=request_id,
                     miner_uid=miner_uid,
                     original_statement=statement,
-                    miner_evidence=miner_vericore_response
+                    miner_evidence=miner_vericore_response,
+                    desearch_response_bodies=desearch_response_bodies,
                 ) for miner_vericore_response in miner_response.synapse.veridex_response[:MAX_MINER_RESPONSES]
             ]
 
@@ -392,22 +556,36 @@ class APIQueryHandler:
 
             bt.logging.info(f"{self.my_uid} | {request_id} | {miner_uid} | Scoring Miner Statements Based on Snippets")
 
-            domain_counts = {}
-
             bt.logging.info(f"{self.my_uid} | {request_id} | {miner_uid} | Calculating miner scores")
 
-            # Check how many times the domain count was reused
-            for statement_response in vericore_statement_responses:
-                if statement_response.snippet_found:
-                    domain_counts[statement_response.domain] = domain_counts.get(statement_response.domain, 0) + 1
+            # Per-domain count of how many times we've seen this domain so far (first use = no penalty, then 0.5, 0.25, ...)
+            domain_seen_count: dict[str, int] = {}
 
             # Calculate the miner's statement score
             sum_of_snippets = 0
-            for statement_response in vericore_statement_responses:
+            social_bonus_total = 0.0
+            veridex_response = miner_response.synapse.veridex_response or []
+            for i, statement_response in enumerate(vericore_statement_responses):
                 if statement_response.snippet_found:
-                    # Use times_used - 1 since we want first use to have no penalty
-                    times_used = domain_counts.get(statement_response.domain, 1) - 1
-                    domain_factor = 1.0 / (2**times_used)
+                    evidence = veridex_response[i] if i < len(veridex_response) else None
+                    is_desearch = evidence is not None and evidence.source_type == SourceType.DESEARCH.value
+                    # Normalize domain for case-insensitive diversity and social checks (avoids bypass via e.g. Example.COM vs example.com)
+                    domain_lower = (statement_response.domain or "").lower()
+
+                    if is_desearch:
+                        is_social_domain = domain_lower in SOCIAL_BONUS_DOMAINS_X or domain_lower == SOCIAL_BONUS_DOMAIN_REDDIT_NAME
+                        if is_social_domain:
+                            # Desearch only: x.com, twitter.com, reddit.com get no duplicate-domain penalty; domain_factor = 1
+                            domain_factor = 1.0
+                        else:
+                            times_used = domain_seen_count.get(domain_lower, 0)
+                            domain_seen_count[domain_lower] = times_used + 1
+                            domain_factor = 1.0 / (2**times_used)
+                    else:
+                        # Web: first use 1.0, second 0.5, third 0.25; etc.
+                        times_used = domain_seen_count.get(domain_lower, 0)
+                        domain_seen_count[domain_lower] = times_used + 1
+                        domain_factor = 1.0 / (2**times_used)
                     if statement_response.context_similarity_score < 0:
                         statement_response.context_similarity_score = 0
 
@@ -419,15 +597,32 @@ class APIQueryHandler:
                     )
                     statement_response.domain_factor = domain_factor
 
+                    # Social bonus: desearch snippets only, and only when desearch proofs are valid; x.com/twitter.com → +1, reddit.com → +0.5
+                    if is_desearch and desearch_proof_valid:
+                            if domain_lower in SOCIAL_BONUS_DOMAINS_X:
+                                social_bonus_total += SOCIAL_BONUS_DOMAIN_X
+                                statement_response.social_bonus_contribution = SOCIAL_BONUS_DOMAIN_X
+                            elif domain_lower == SOCIAL_BONUS_DOMAIN_REDDIT_NAME:
+                                social_bonus_total += SOCIAL_BONUS_DOMAIN_REDDIT
+                                statement_response.social_bonus_contribution = SOCIAL_BONUS_DOMAIN_REDDIT
+
                 # Add score of all snippets
                 sum_of_snippets += statement_response.snippet_score
 
             # Calculate final score considering speed factor
             speed_factor = self.calculate_speed_factor(miner_response.elapse_time)
 
+            # Miner-level desearch proof bonus/penalty (applied once, not per snippet)
+            desearch_adjustment = 0
+            if desearch_list:
+                if desearch_proof_valid:
+                    desearch_adjustment = DESEARCH_PROOF_VALID_BONUS
+                else:
+                    desearch_adjustment = DESEARCH_PROOF_INVALID_PENALTY
+
             bt.logging.info(f"{self.my_uid} | {request_id} | {miner_uid} | Calculated Speed Factor: {speed_factor} | Miner response: {miner_response.elapse_time}")
-            final_score = sum_of_snippets * speed_factor
-            bt.logging.info(f"{self.my_uid} | {request_id} | {miner_uid} | Final Score: {final_score} | Sum Of Snippets: {sum_of_snippets}")
+            final_score = (sum_of_snippets * speed_factor) + desearch_adjustment + social_bonus_total
+            bt.logging.info(f"{self.my_uid} | {request_id} | {miner_uid} | Final Score: {final_score} | Sum Of Snippets: {sum_of_snippets} | Desearch Adjustment: {desearch_adjustment} | Social Bonus: {social_bonus_total}")
             if is_test and is_nonsense and final_score > 0.5:
                 final_score -= 1.0
 
@@ -468,6 +663,8 @@ class APIQueryHandler:
                 max_snippet_time_secs=max(snippet_times) if snippet_times else 0,
                 snippet_count=len(snippet_times),
                 timing=miner_timing,
+                desearch_bonus_score=desearch_adjustment,
+                social_bonus_score=social_bonus_total,
             )
             return miner_statement
         except Exception as e:
@@ -809,6 +1006,7 @@ class JWTAuthMiddleware(BaseHTTPMiddleware):
         # OPTIONS preflight requests do not send Authorization; let them through so CORSMiddleware can respond
         if request.method == "OPTIONS":
             return await call_next(request)
+
         auth = request.headers.get("Authorization")
         if not auth:
             bt.logging.warning(
@@ -858,6 +1056,8 @@ class JWTAuthMiddleware(BaseHTTPMiddleware):
                     content={"detail": "Invalid or expired token"},
                     status_code=401,
                 )
+            # Expose linked wallet (if present) for endpoints that need wallet attribution
+            request.state.linked_wallet = get_linked_wallet_from_payload(payload)
         except jwt.ExpiredSignatureError as e:
             bt.logging.warning(
                 f"JWT auth: 401 for {request.url.path} — token expired: {e}"
@@ -902,7 +1102,7 @@ class JWTAuthMiddleware(BaseHTTPMiddleware):
         bt.logging.info(f"JWT auth: valid JWT accepted for {request.url.path}")
         return await call_next(request)
 
-
+# Disable JWT auth for testing
 app.add_middleware(JWTAuthMiddleware)
 
 
