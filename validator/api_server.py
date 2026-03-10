@@ -87,6 +87,13 @@ EXPLORATION_FACTOR = 0.1  # 10% exploration
 NEW_MINER_BONUS = 2.0
 
 
+def normalize_endpoint(s: str | None) -> str | None:
+    """Strip leading/trailing whitespace (including Unicode NBSP U+00A0) from endpoint/URL strings."""
+    if not s or not isinstance(s, str):
+        return s
+    return s.strip()
+
+
 def get_parser():
     """Build argument parser with Bittensor and axon args (shared by get_config and __main__)."""
     parser = argparse.ArgumentParser()

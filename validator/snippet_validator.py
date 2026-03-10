@@ -313,13 +313,27 @@ class SnippetValidator:
         miner_uid: int,
         original_statement: str,
         domain: str,
-        miner_evidence: SourceEvidence
+        miner_evidence: SourceEvidence,
+        hostname: str | None = None,
     ) -> VericoreStatementResponse | None:
 
         # Check if domain is blacklisted
-        if is_blacklisted_domain(request_id=request_id, miner_uid=miner_uid, domain=domain):
-            return self._create_invalid_statement_response(
-                miner_evidence, domain, BLACKLISTED_URL_SCORE, "blacklisted_url"
+        if is_blacklisted_domain(
+            request_id=request_id,
+            miner_uid=miner_uid,
+            domain=domain,
+            hostname=hostname,
+        ):
+            snippet_score = BLACKLISTED_URL_SCORE
+            return VericoreStatementResponse(
+                url=miner_evidence.url,
+                excerpt=miner_evidence.excerpt,
+                domain=domain,
+                snippet_found=False,
+                local_score=0.0,
+                snippet_score=snippet_score,
+                snippet_score_reason="blacklisted_url",
+                timing=StatementResponseTiming(),
             )
 
         # check if url has query string and excerpt same as query string
