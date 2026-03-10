@@ -22,7 +22,6 @@ from shared.veridex_protocol import (
     VericoreStatementResponse,
     FetchPageResult,
     StatementResponseTiming,
-    SNIPPET_FETCHER_STATUS_NOT_RUN,
 )
 from validator.context_similarity_validator import calculate_similarity_score
 from validator.domain_validator import domain_is_recently_registered
@@ -680,6 +679,8 @@ class SnippetValidator:
                 miner_evidence, "", SSL_DOMAIN_REQUIRED, "ssl_url_required"
             )
 
+        hostname = urlparse(miner_evidence.url).hostname
+
         bt.logging.info(
             f"{request_id} | {miner_uid} | {miner_evidence.url} | Domain verified"
         )
@@ -689,7 +690,8 @@ class SnippetValidator:
             miner_uid=miner_uid,
             original_statement=original_statement,
             domain=domain,
-            miner_evidence=miner_evidence
+            miner_evidence=miner_evidence,
+            hostname=hostname,
         )
         if vericore_miner_response is not None:
             return vericore_miner_response
