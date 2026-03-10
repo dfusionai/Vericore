@@ -121,7 +121,7 @@ def main() -> int:
 
     url = args.base_url.rstrip("/") + DESEARCH_LINK_PATH
     headers = {
-        "Authorization": f"Bearer {api_key}",
+        "Authorization": api_key,
         "Content-Type": "application/json",
     }
     payload = {

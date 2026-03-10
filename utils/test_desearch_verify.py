@@ -60,7 +60,7 @@ def main() -> int:
     headers = {
         "Accept": "application/json",
         "Content-Type": "application/json",
-        "Authorization": f"Bearer {api_key}",
+        "Authorization": api_key,
         "X-Coldkey": coldkey,
     }
 
