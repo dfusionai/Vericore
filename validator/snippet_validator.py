@@ -383,12 +383,14 @@ class SnippetValidator:
     def _evidence_in_desearch_response(
         self, url: str, excerpt: str, response_body: bytes
     ) -> bool:
-        """Check if url is present in the Desearch response body (text or JSON). Excerpt is not checked."""
+        """Check if url is present in the Desearch response body (text or JSON). Excerpt is not checked. Empty URL must not pass."""
         try:
             if response_body is None:
                 return False
+            if not (url and url.strip()):
+                return False  # empty URL bypass would otherwise skip the body check
             text = response_body.decode("utf-8", errors="replace") or ""
-            if url and url not in text:
+            if url.strip() not in text:
                 return False
             return True
         except Exception:
