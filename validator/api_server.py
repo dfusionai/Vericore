@@ -504,6 +504,9 @@ class APIQueryHandler:
                             all_valid = False
                             break
                     desearch_proof_valid = all_valid and len(desearch_response_bodies) == len(desearch_list)
+            # When any proof failed, do not pass partial bodies: no desearch snippet may pass evidence-in-body
+            if not desearch_proof_valid:
+                desearch_response_bodies = []
 
             # Create tasks
             tasks = [
@@ -559,21 +562,22 @@ class APIQueryHandler:
                 if statement_response.snippet_found:
                     evidence = veridex_response[i] if i < len(veridex_response) else None
                     is_desearch = evidence is not None and evidence.source_type == SourceType.DESEARCH.value
+                    # Normalize domain for case-insensitive diversity and social checks (avoids bypass via e.g. Example.COM vs example.com)
+                    domain_lower = (statement_response.domain or "").lower()
 
                     if is_desearch:
-                        domain_lower = (statement_response.domain or "").lower()
                         is_social_domain = domain_lower in SOCIAL_BONUS_DOMAINS_X or domain_lower == SOCIAL_BONUS_DOMAIN_REDDIT_NAME
                         if is_social_domain:
                             # Desearch only: x.com, twitter.com, reddit.com get no duplicate-domain penalty; domain_factor = 1
                             domain_factor = 1.0
                         else:
-                            times_used = domain_seen_count.get(statement_response.domain, 0)
-                            domain_seen_count[statement_response.domain] = times_used + 1
+                            times_used = domain_seen_count.get(domain_lower, 0)
+                            domain_seen_count[domain_lower] = times_used + 1
                             domain_factor = 1.0 / (2**times_used)
                     else:
                         # Web: first use 1.0, second 0.5, third 0.25; etc.
-                        times_used = domain_seen_count.get(statement_response.domain, 0)
-                        domain_seen_count[statement_response.domain] = times_used + 1
+                        times_used = domain_seen_count.get(domain_lower, 0)
+                        domain_seen_count[domain_lower] = times_used + 1
                         domain_factor = 1.0 / (2**times_used)
                     if statement_response.context_similarity_score < 0:
                         statement_response.context_similarity_score = 0
