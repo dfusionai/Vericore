@@ -70,6 +70,12 @@ class SourceType(str, Enum):
     DESEARCH = "desearch"
 
 
+class EvidenceCategory(str, Enum):
+    """Category for snippet evidence. Wire format is the string value (e.g. in JSON: 'Web', 'Social')."""
+    WEB = "Web"
+    SOCIAL = "Social"
+
+
 class SourceEvidence(typing.NamedTuple):
     """
     Container for a single piece of evidence from a miner.
@@ -154,6 +160,7 @@ class VericoreStatementResponse():
   catalyst_detection: float = 0.0
   political_leaning: float = 0.0
   social_bonus_contribution: float = 0.0  # This excerpt's contribution to miner social_bonus_score (0, 0.5, or 1.0)
+  category: EvidenceCategory = EvidenceCategory.WEB  # EvidenceCategory.SOCIAL for x.com/twitter.com/reddit.com; EvidenceCategory.WEB otherwise
 
 @dataclass
 class VericoreMinerStatementResponse():

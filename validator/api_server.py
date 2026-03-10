@@ -33,6 +33,7 @@ from shared.veridex_protocol import (
     VericoreStatementResponse,
     SourceEvidence,
     SourceType,
+    EvidenceCategory,
     Desearch,
     StatementResponseTiming,
     MinerResponseTiming,
@@ -550,6 +551,7 @@ class APIQueryHandler:
                         local_score=0.0,
                         snippet_score=0.0,
                         snippet_score_reason="too_many_snippets",
+                        category=EvidenceCategory.WEB,
                         timing=timing,
                     )
                 )
@@ -1102,7 +1104,7 @@ class JWTAuthMiddleware(BaseHTTPMiddleware):
         bt.logging.info(f"JWT auth: valid JWT accepted for {request.url.path}")
         return await call_next(request)
 
-# Disable JWT auth for testing
+
 app.add_middleware(JWTAuthMiddleware)
 
 
