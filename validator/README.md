@@ -145,6 +145,12 @@ python -m validator.validator_daemon --wallet.name bittensor --wallet.hotkey val
 
 ---
 
+## API documentation
+
+The HTTP API (GET /version, POST /veridex_query), authentication (JWT), and response shapes are documented in [../docs/api.md](../docs/api.md).
+
+---
+
 ## Monitoring and Logging
 
 The validator will output logs to the console and save logs to files in the following directory structure:
