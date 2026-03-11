@@ -249,6 +249,7 @@ class SnippetFetcher:
             # Run Selenium in thread since it's synchronous
             # Each driver handles one request at a time (thread-safe)
             def selenium_fetch():
+                driver.set_page_load_timeout(REQUEST_TIMEOUT_SECONDS)
                 driver.get(url)
                 # Wait for page to load (Strategy: Follow Natural Page Flow)
                 WebDriverWait(driver, 30).until(
